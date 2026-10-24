@@ -1,7 +1,7 @@
 {
   "name": "Мини-игры",
   "short_name": "Мини-игры",
-  "description": "Neon Runner и Луи на прогулке",
+  "description": "Выгуляй Луи, Луи на прогулке и Neon Runner",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",

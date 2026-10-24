@@ -2,7 +2,7 @@
  * Он обслуживает только файлы меню. У каждой игры свой воркер в её папке,
  * поэтому запросы к играм здесь не перехватываются. */
 const CACHE_PREFIX = 'hub-';
-const CACHE_NAME = CACHE_PREFIX + 'v1';
+const CACHE_NAME = CACHE_PREFIX + 'v2';
 const LEGACY_CACHES = ['neon-runner-v1']; // кэш старой версии, когда Neon Runner жил на корне
 const ASSETS = [
   './',
@@ -13,6 +13,7 @@ const ASSETS = [
   './icons/hub-512.png',
   './icons/hub-512-maskable.png',
   './icons/hub-apple-touch-icon.png',
+  './louis-walk/icons/icon-192.png',
   './louis/icons/icon-192.png',
   './neon-runner/icons/icon-192.png'
 ];

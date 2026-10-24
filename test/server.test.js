@@ -33,7 +33,8 @@ function rawRequest(pathname, method = 'GET') {
 const APPS = [
   { dir: '/', marker: 'Мини-игры' },
   { dir: '/neon-runner/', marker: '<canvas id="game"' },
-  { dir: '/louis/', marker: '<canvas id="game"' }
+  { dir: '/louis/', marker: '<canvas id="game"' },
+  { dir: '/louis-walk/', marker: '<canvas id="game"' }
 ];
 
 test('меню и обе игры отдаются как HTML без кэша', async () => {
@@ -119,7 +120,9 @@ test('скрипты, стили и иконки с правильными MIME'
     ['/louis/logic.js', 'text/javascript; charset=utf-8'],
     ['/louis/style.css', 'text/css; charset=utf-8'],
     ['/icons/hub-192.png', 'image/png'],
-    ['/louis/icons/icon-512.png', 'image/png']
+    ['/louis/icons/icon-512.png', 'image/png'],
+    ['/louis-walk/art.js', 'text/javascript; charset=utf-8'],
+    ['/louis-walk/icons/icon-512.png', 'image/png']
   ];
   for (const [p, type] of cases) {
     const r = await rawRequest(p);
