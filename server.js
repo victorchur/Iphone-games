@@ -99,6 +99,15 @@ function createServer(options) {
     }
 
     fs.stat(filePath, (err, stat) => {
+      if (!err && stat.isDirectory()) {
+        // /louis -> /louis/, чтобы относительные пути внутри игры работали
+        // Адрес строим из нормализованного пути, а не из запроса: //host не превратится в чужой домен
+        const rel = path.relative(ROOT, filePath).split(path.sep).map(encodeURIComponent).join('/');
+        const { search } = new URL(req.url, 'http://localhost');
+        res.writeHead(301, { Location: '/' + rel + (rel ? '/' : '') + search, 'Content-Length': 0, 'Cache-Control': 'no-cache' });
+        res.end();
+        return finish(301);
+      }
       if (err || !stat.isFile()) {
         sendText(res, 404, 'Not Found');
         return finish(404);

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1033">
+  <meta name="description" content="Мини-игры для телефона: Neon Runner и Луи на прогулке">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Мини-игры">
+  <title>Мини-игры</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/hub-192.png">
+  <link rel="apple-touch-icon" href="icons/hub-apple-touch-icon.png">
+  <link rel="stylesheet" href="hub.css">
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>Мини-игры</h1>
+      <p>Выбирай и играй. Каждую игру можно поставить на экран «Домой», работают без интернета.</p>
+    </header>
+
+    <a class="card louis" href="louis/">
+      <img src="louis/icons/icon-192.png" alt="" width="88" height="88">
+      <span class="text">
+        <span class="name">Луи на прогулке</span>
+        <span class="desc">Пёс Луи гуляет во дворе: ищет вкусняшки и игрушки, дружит с маленькими собачками и убегает от больших.</span>
+      </span>
+      <span class="go" aria-hidden="true">&rsaquo;</span>
+    </a>
+
+    <a class="card neon" href="neon-runner/">
+      <img src="neon-runner/icons/icon-192.png" alt="" width="88" height="88">
+      <span class="text">
+        <span class="name">Neon Runner</span>
+        <span class="desc">Неоновый раннер на три полосы. Уворачивайся от барьеров и собирай монеты.</span>
+      </span>
+      <span class="go" aria-hidden="true">&rsaquo;</span>
+    </a>
+
+    <p class="hint">На iPhone: открой игру в Safari, нажми «Поделиться» и выбери «На экран Домой».</p>
+  </main>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
+      });
+    }
+  </script>
+</body>
+</html>

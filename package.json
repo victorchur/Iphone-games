@@ -1,8 +1,8 @@
 {
-  "name": "neon-runner",
+  "name": "iphone-games",
   "version": "1.0.0",
   "private": true,
-  "description": "Neon Runner - мобильный неоновый раннер на Canvas 2D, PWA, без зависимостей",
+  "description": "Мини-игры для телефона на Canvas 2D: Neon Runner и Луи на прогулке. PWA, без зависимостей",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
