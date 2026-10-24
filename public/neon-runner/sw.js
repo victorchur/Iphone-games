@@ -1,6 +1,8 @@
 /* Neon Runner - service worker: офлайн-режим и кэш статики.
- * При обновлении игры увеличь версию в CACHE_NAME, старый кэш удалится. */
-const CACHE_NAME = 'neon-runner-v1';
+ * При обновлении игры увеличь версию в CACHE_NAME, старый кэш удалится.
+ * Удаляются только кэши этой игры: на домене живут и другие игры со своими воркерами. */
+const CACHE_PREFIX = 'neon-runner-';
+const CACHE_NAME = CACHE_PREFIX + 'v2';
 const ASSETS = [
   './',
   './index.html',
@@ -23,7 +25,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

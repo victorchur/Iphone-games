@@ -649,6 +649,7 @@
   canvas.addEventListener('pointercancel', () => { pointer = null; });
 
   ui.start.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('a')) return; // ссылка «Все игры»
     e.preventDefault();
     ensureAudio();
     startGame();

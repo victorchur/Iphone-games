@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const L = require('../public/logic.js');
+const L = require('../public/neon-runner/logic.js');
 
 const cfg = L.CONFIG;
 
