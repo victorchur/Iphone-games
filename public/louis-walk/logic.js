@@ -123,10 +123,11 @@
     BAD_POOP_ROLLBACK: 100,     // съел гадость - шкала «покакать» откатывается
 
     // Чужие собаки с хозяевами
-    MAX_PAIRS: 6,               // гуляющих пар одновременно (без собачьей площадки)
-    START_PAIRS: 2,
-    FIRST_PAIR_AT: 4,
-    PAIR_INTERVAL: [8, 16],
+    MAX_PAIRS: 4,               // гуляющих пар одновременно (без собачьей площадки)
+    START_PAIRS: 1,
+    FIRST_PAIR_AT: 12,
+    PAIR_INTERVAL: [14, 26],
+    BUSY_SPAWN_DELAY: 6,        // пока Луи занят делом, новые соседи не приходят
     PAIR_WALK_SPEED: 52,
     DOG_LEASH: 55,
     BIG_ANGRY_CHANCE: 0.55,     // большая собака злая, иначе добрая
@@ -157,6 +158,7 @@
     KID_RUN_R: 150,
 
     // Голуби, кошки, утки, дворники, кучи
+    FLOCKS: 4,                  // стай голубей в районе
     PIGEON_FLEE_R: 95,          // голуби взлетают сразу, как Луи подошёл
     PIGEON_FLY_TIME: 2.6,
     CAT_FLEE_R: 95,
@@ -758,7 +760,7 @@
 
     // Голуби, кошки, утки
     var spots = WORLD.pigeonSpots.slice();
-    for (var f = 0; f < 5; f++) {
+    for (var f = 0; f < CONFIG.FLOCKS; f++) {
       var spot = spots.splice(Math.floor(rng() * spots.length), 1)[0];
       var birds = [];
       for (var n = 0; n < 4 + Math.floor(rng() * 4); n++) birds.push({ ox: rand(rng, -24, 24), oy: rand(rng, -18, 18), ph: rng() * 6, dx: rand(rng, -1, 1), dy: rand(rng, -1, 1) });
@@ -1012,7 +1014,7 @@
     else if (a.type === 'spin' && a.t >= C.POOP_SPIN_TIME) L.act = { type: 'poop', t: 0 };
     else if (a.type === 'poop' && a.t >= C.POOP_TIME) {
       s.meters.poop = 100;
-      var off = toWorldDir(-L.facing * 12, 0);
+      var off = toWorldDir(-L.facing * 16, 0);
       var pile = { x: L.x + off.x, y: L.y + off.y };
       s.poops.push(pile);
       L.act = null;
@@ -1174,7 +1176,8 @@
 
     if (dog.character === 'friendly') {
       if (!dog.invited && d < C.INVITE_R) { dog.invited = true; ev('invite'); }
-      if (dog.state === 'leash' && !dog.friend && d < C.GREET_R && L.panic <= 0) { dog.state = 'greet'; dog.progress = 0; }
+      // Пока Луи делает дела, добрые собаки ждут и не лезут знакомиться
+      if (dog.state === 'leash' && !dog.friend && d < C.GREET_R && L.panic <= 0 && !L.act) { dog.state = 'greet'; dog.progress = 0; }
       if (dog.state === 'greet') {
         if (d > C.GREET_R * 1.4 || L.panic > 0) dog.state = 'leash';
         else if (d > C.FRIEND_SNIFF_R) { moved = moveToward(dog, L.x, L.y, 80, dt); dog.progress = Math.max(0, dog.progress - dt * 0.5); }
@@ -1294,7 +1297,7 @@
     s.kids.forEach(function (kid) {
       var moved = 0;
       var d = d2(kid, L);
-      if (kid.cd <= 0 && d < C.KID_RUN_R && d > C.PET_R * 0.6 && L.panic <= 0) moved = moveToward(kid, L.x, L.y, 75, dt);
+      if (kid.cd <= 0 && d < C.KID_RUN_R && d > C.PET_R * 0.6 && L.panic <= 0 && !L.act) moved = moveToward(kid, L.x, L.y, 75, dt);
       else if (kid.court && ball) {
         // Дети на спортплощадке бегают за мячом
         var nearest = s.kids.filter(function (k) { return k.court; }).sort(function (a, b) { return d2(a, ball) - d2(b, ball); })[0];
@@ -1547,6 +1550,7 @@
     stepItems(s, dt, rng, events);
     stepToilet(s, dt, moving, events);
 
+    if (s.t >= s.nextPairAt && L.act) s.nextPairAt = s.t + C.BUSY_SPAWN_DELAY;
     if (s.t >= s.nextPairAt) {
       s.nextPairAt = s.t + rand(rng, C.PAIR_INTERVAL[0], C.PAIR_INTERVAL[1]);
       if (s.pairs.filter(function (p) { return !p.offLeash; }).length < C.MAX_PAIRS) {

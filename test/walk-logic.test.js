@@ -485,6 +485,20 @@ test('с доброй собакой понюхались: счастье и д�
   assert.ok(withFriend > solo.meters.energy * 1.5, 'вместе бегать веселее');
 });
 
+test('пока Луи делает дела, добрая собака и дети ждут, новые соседи не приходят', () => {
+  const s = quietWalk(32);
+  const p = pairNear(s, 'friendly');
+  place(s, LAWN.x + 20, LAWN.y + 10);
+  s.louis.act = { type: 'poop', t: 0 };
+  s.nextPairAt = s.t;
+  const ev = run(s, idle, 0.5);
+  assert.equal(p.dog.state, 'leash', 'не лезет знакомиться');
+  assert.ok(!has(ev, 'pairEnter'), 'соседи не пришли');
+  assert.ok(s.nextPairAt > s.t, 'приход отложен');
+  run(s, idle, C.POOP_TIME + 2);
+  assert.ok(s.stats.friends.length === 1 || p.dog.state === 'greet' || p.dog.state === 'play', 'потом знакомятся');
+});
+
 test('злая собака: рычит, срывается, пугает, Луи бежит к подъезду', () => {
   const s = quietWalk(24);
   const p = pairNear(s, 'angry');

@@ -108,7 +108,18 @@
   }
 
   /* ======================= Луи ======================= */
-  const LEASH_POINT = { x: 1, y: -26 };
+  const LEASH_POINT = { x: 4, y: -26 };
+
+  /** Ровный кудрявый хвост: одинаковой толщины, без помпона. Растёт из (0, 0) вверх на длину len. */
+  function straightTail(c, len, r, tones, outline) {
+    const n = Math.max(3, Math.round(len / (r * 0.9)));
+    const pts = [];
+    for (let i = 0; i <= n; i++) pts.push({ x: -i / n * len * 0.18, y: -i / n * len });
+    if (outline) { c.fillStyle = outline; for (const p of pts) { circle(c, p.x, p.y, r + 0.9); c.fill(); } }
+    pts.forEach((p, i) => { c.fillStyle = i % 2 ? tones[1] : tones[0]; circle(c, p.x, p.y, r); c.fill(); });
+    c.fillStyle = tones[2];
+    pts.forEach((p, i) => { if (i % 2 === 0) { circle(c, p.x - r * 0.35, p.y - r * 0.3, r * 0.45); c.fill(); } });
+  }
 
   /** Мягкий кудрявый силуэт: контур, основа и кудряшки близких оттенков. */
   function fluff(c, cx, cy, rx, ry, curls, cr, tones, outline) {
@@ -144,7 +155,7 @@
     const run = o.pose === 'run';
     const jumpH = o.jump > 0 ? Math.sin(Math.min(1, (0.5 - o.jump) / 0.5) * Math.PI) * 16 : 0;
     c.save();
-    shadow(c, 14 - jumpH * 0.3, 4);
+    shadow(c, 17 - jumpH * 0.3, 4);
     c.translate(0, -jumpH);
     c.scale(o.facing, 1);
     const bob = -Math.abs(Math.sin(o.phase)) * (run ? 2.4 : 1.3) * mv;
@@ -166,44 +177,42 @@
     c.save();
     if (squat) { c.translate(0, 2); c.rotate(-0.2); }
     // Дальние лапы
-    leg(8, -11 + bob, -sw, C.dark);
-    leg(-8, -11 + bob, sw, C.dark, squat ? 9 : 13);
+    leg(11, -11 + bob, -sw, C.dark);
+    leg(-11, -11 + bob, sw, C.dark, squat ? 9 : 13);
 
-    // Хвост торчит вверх кудрявым помпоном
-    let tailA = -0.35 + Math.sin(o.t * (o.expr === 'happy' ? 20 : 8)) * (o.expr === 'happy' ? 0.35 : 0.14);
+    // Хвост ровный, торчит вверх и назад
+    let tailA = -0.45 + Math.sin(o.t * (o.expr === 'happy' ? 20 : 8)) * (o.expr === 'happy' ? 0.3 : 0.12);
     if (o.expr === 'scared') tailA = 1.2;
-    if (squat) tailA = -0.8;
+    if (squat) tailA = -0.9;
     c.save();
-    c.translate(-11, -22 + bob);
+    c.translate(-15, -22 + bob);
     c.rotate(tailA);
-    c.strokeStyle = C.base; c.lineWidth = 3.4; c.lineCap = 'round';
-    c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(-3, -6, -2, -10); c.stroke();
-    fluff(c, -2, -13, 4.3, 4.3, CURLS.tail, 1.7, fur, outline);
+    straightTail(c, 12, 2.7, fur, outline);
     c.restore();
 
-    // Тело
-    fluff(c, 0, -18 + bob, 13.5, 8.2, CURLS.body, 2, fur, outline);
+    // Тело: длиннее, чем высота, как у Луи на фото
+    fluff(c, 0, -18 + bob, 17, 8.2, CURLS.body, 2, fur, outline);
 
     // Коричневая шлейка
     c.strokeStyle = C.harness; c.lineWidth = 2.4; c.lineCap = 'round';
-    c.beginPath(); c.moveTo(7.5, -25.5 + bob); c.quadraticCurveTo(11, -18 + bob, 8.5, -11.5 + bob); c.stroke();
-    c.beginPath(); c.moveTo(-1.5, -26 + bob); c.quadraticCurveTo(0.5, -18 + bob, -1.5, -10.5 + bob); c.stroke();
+    c.beginPath(); c.moveTo(10.5, -25.5 + bob); c.quadraticCurveTo(14, -18 + bob, 11.5, -11.5 + bob); c.stroke();
+    c.beginPath(); c.moveTo(1.5, -26 + bob); c.quadraticCurveTo(3.5, -18 + bob, 1.5, -10.5 + bob); c.stroke();
     c.fillStyle = C.harnessDark;
-    rr(c, -3.5, -28 + bob, 12, 3.6, 1.6); c.fill();
+    rr(c, -0.5, -28 + bob, 12, 3.6, 1.6); c.fill();
     c.strokeStyle = '#9aa1a6'; c.lineWidth = 1.1;
     c.beginPath(); c.arc(LEASH_POINT.x, LEASH_POINT.y - 1.6 + bob, 1.4, Math.PI, Math.PI * 2); c.stroke();
 
     // Ближние лапы
-    leg(6, -11 + bob, sw, C.base);
+    leg(9, -11 + bob, sw, C.base);
     if (pee) {
-      c.save(); c.translate(-8, -15 + bob); c.rotate(-1.15);
+      c.save(); c.translate(-12, -15 + bob); c.rotate(-1.15);
       c.fillStyle = C.base; rr(c, -2.7, -1, 5.4, 12, 2.7); c.fill();
       c.restore();
-    } else leg(-9, -11 + bob, -sw, C.base, squat ? 9 : 13);
+    } else leg(-12, -11 + bob, -sw, C.base, squat ? 9 : 13);
     c.restore();
 
     // Голова: круглая и пушистая
-    const hx = sniff ? 17 : 13;
+    const hx = sniff ? 21 : 17;
     const hy = (sniff ? -18 : -31) + bob + (sniff ? Math.sin(o.t * 16) * 0.7 : 0);
     const earBack = o.expr === 'scared' ? 0.6 : run ? 0.4 * mv : 0;
     fluff(c, hx, hy, 9.8, 9.4, CURLS.head, 2.1, fur, outline);
@@ -245,14 +254,14 @@
     const C = LOUIS, fur = [C.base, C.dark, C.light], outline = 'rgba(70,25,8,0.55)';
     const breathe = Math.sin(o.t * 2) * 0.6;
     c.save();
-    shadow(c, 18, 4);
+    shadow(c, 21, 4);
     c.scale(o.facing, 1);
-    fluff(c, -14, -6, 4, 4, CURLS.tail, 1.6, fur, outline);
-    fluff(c, 0, -8 + breathe * 0.3, 15, 7 + breathe, CURLS.body, 2, fur, outline);
-    c.fillStyle = C.base; ellipse(c, 10, -2.5, 6, 2.6); c.fill(); ellipse(c, -6, -2.5, 6, 2.6); c.fill();
+    c.save(); c.translate(-17, -7); c.rotate(-1.25); straightTail(c, 11, 2.5, fur, outline); c.restore();
+    fluff(c, 0, -8 + breathe * 0.3, 18, 7 + breathe, CURLS.body, 2, fur, outline);
+    c.fillStyle = C.base; ellipse(c, 12, -2.5, 6, 2.6); c.fill(); ellipse(c, -9, -2.5, 6, 2.6); c.fill();
     c.strokeStyle = C.harness; c.lineWidth = 2.2;
-    c.beginPath(); c.moveTo(3, -14); c.quadraticCurveTo(6, -8, 4, -2); c.stroke();
-    const hx = 14, hy = -11;
+    c.beginPath(); c.moveTo(5, -14); c.quadraticCurveTo(8, -8, 6, -2); c.stroke();
+    const hx = 17, hy = -11;
     fluff(c, hx, hy, 8.6, 8, CURLS.head, 1.9, fur, outline);
     fluff(c, hx + 7, hy + 3, 5.4, 4, CURLS.muzzle, 1.5, [C.light, C.base, C.glow], null);
     c.fillStyle = C.nose; ellipse(c, hx + 11.5, hy + 2, 2.2, 1.8); c.fill();

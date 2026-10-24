@@ -2,7 +2,7 @@
  * При обновлении игры увеличь версию в CACHE_NAME, старый кэш удалится.
  * Удаляются только кэши этой игры: на домене живут и другие игры со своими воркерами. */
 const CACHE_PREFIX = 'walk-';
-const CACHE_NAME = CACHE_PREFIX + 'v2';
+const CACHE_NAME = CACHE_PREFIX + 'v3';
 const ASSETS = [
   './',
   './index.html',

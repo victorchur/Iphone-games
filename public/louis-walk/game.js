@@ -29,7 +29,10 @@
     MAX_DT: 0.05,
     FLOOR_H: 42,
     WISH_EVERY: 7,
-    WISH_SHOW: 2.4
+    WISH_SHOW: 2.4,
+    MAX_BUBBLES: 3,       // реплик на экране одновременно
+    MAX_NPC_BUBBLES: 2,   // из них от прохожих, собак и детей
+    TOAST_GAP: 0.35       // пауза между подсказками
   };
   const COLORS = {
     street: '#5d5a55', curb: '#8a857d', lawn: '#7f8f3c', lawnDark: '#6f7f33', lawnLight: '#93a24a',
@@ -72,7 +75,7 @@
     cam: { x: -180, y: 80 }, time: 0, particles: [], bubbles: [], rings: [],
     wishT: 3, wishShow: 0, wish: null, heartbeat: 0, ambient: 3, leafT: 0,
     tutorial: safeStorage.getItem(STORAGE_TUTORIAL) !== '1', tutorialStep: 0, tutorialTimer: 0,
-    lastResult: null, endTimer: 0, homeT: 0, fuFlash: 0, toastTimer: 0
+    lastResult: null, endTimer: 0, homeT: 0, fuFlash: 0, toastTimer: 0, toastPrio: 0, toastNext: null, toastGap: 0
   };
 
   /* ================================== Звук ================================== */
@@ -674,9 +677,17 @@
   }
 
   const KIOSK_VENDOR = { x: WORLD.kiosk.x + WORLD.kiosk.w / 2, y: WORLD.kiosk.y + WORLD.kiosk.h - 6, z: 52 };
+  /** Реплика над героем. Прохожие молчат, если на экране уже много реплик: так спокойнее. */
   function say(owner, text, ttl = 1.8, color) {
+    const s = app.walk || app.demo;
+    const main = (o) => s && (o === s.louis || o === s.owner);
     app.bubbles = app.bubbles.filter((b) => b.owner !== owner);
+    if (!main(owner) && app.bubbles.filter((b) => !main(b.owner)).length >= VISUAL.MAX_NPC_BUBBLES) return;
     app.bubbles.push({ owner, text, life: ttl, ttl, color });
+    while (app.bubbles.length > VISUAL.MAX_BUBBLES) {
+      const i = app.bubbles.findIndex((b) => !main(b.owner));
+      app.bubbles.splice(i >= 0 ? i : 0, 1);
+    }
   }
   function bubbleHeight(owner) {
     const s = app.walk || app.demo;
@@ -723,10 +734,36 @@
     c.globalAlpha = 1;
   }
 
+  /**
+   * Подсказка вверху. Одна за раз: тревога перебивает остальное, хорошая новость ждёт своей очереди,
+   * а мелочь пропадает, если очередь занята.
+   */
+  const TOAST_PRIO = { danger: 3, good: 2, '': 1, tutorial: 0 };
   function toast(text, kind = '', dur = 2.2) {
+    const prio = TOAST_PRIO[kind] !== undefined ? TOAST_PRIO[kind] : 1;
+    const busy = app.toastTimer > 0.5 || app.toastGap > 0;
+    if (busy && prio <= app.toastPrio) {
+      if (prio >= 2 && (!app.toastNext || app.toastNext.prio <= prio)) app.toastNext = { text, kind, dur, prio, at: app.time };
+      return;
+    }
+    showToast(text, kind, dur, prio);
+  }
+  function showToast(text, kind, dur, prio) {
     ui.toast.textContent = text;
-    ui.toast.className = 'toast show' + (kind ? ' ' + kind : '');
+    ui.toast.className = 'toast show' + (kind && kind !== 'tutorial' ? ' ' + kind : '');
     app.toastTimer = dur;
+    app.toastPrio = prio;
+    app.toastGap = 0;
+  }
+  function updateToast(dt) {
+    if (app.toastTimer > 0) {
+      app.toastTimer -= dt;
+      if (app.toastTimer <= 0) { ui.toast.classList.remove('show'); app.toastPrio = 0; app.toastGap = VISUAL.TOAST_GAP; }
+      return;
+    }
+    if (app.toastGap > 0) { app.toastGap -= dt; return; }
+    const n = app.toastNext;
+    if (n) { app.toastNext = null; if (app.time - n.at < 4) showToast(n.text, n.kind, n.dur, n.prio); }
   }
   const TUTORIAL = [
     'Веди пальцем по экрану, Луи пойдёт следом. Тяни дальше - побежит',
@@ -1060,7 +1097,7 @@
       louisRef.ring = { x: p.x + ring.x, y: p.y + ring.y };
       if (L.act && L.act.type === 'pee' && Math.random() < 0.6) {
         const dir = L.facing;
-        addParticle({ kind: 'drop', x: p.x - dir * 9, y: p.y - 9, vx: -dir * 40, vy: -10, life: 0.25, ttl: 0.25, size: 1.5, color: 'rgba(240,200,60,0.85)', rot: 0, floor: p.y });
+        addParticle({ kind: 'drop', x: p.x - dir * 12, y: p.y - 9, vx: -dir * 40, vy: -10, life: 0.25, ttl: 0.25, size: 1.5, color: 'rgba(240,200,60,0.85)', rot: 0, floor: p.y });
       }
     }));
     list.sort((a, b) => a.d - b.d);
@@ -1405,6 +1442,7 @@
     app.mode = 'playing';
     app.particles.length = 0; app.bubbles.length = 0; app.rings.length = 0;
     app.heartbeat = 0; app.wishT = 4; app.wishShow = 0; app.tutorialStep = 0; app.tutorialTimer = 0.8;
+    app.toastNext = null; app.toastTimer = 0; app.toastGap = 0; app.toastPrio = 0;
     joy.id = null;
     prepareGround(app.walk);
     show(ui.menu, false); show(ui.result, false); show(ui.pauseScreen, false);
@@ -1584,7 +1622,7 @@
   }
   function update(dt) {
     app.time += dt;
-    if (app.toastTimer > 0) { app.toastTimer -= dt; if (app.toastTimer <= 0) ui.toast.classList.remove('show'); }
+    updateToast(dt);
     if (app.fuFlash > 0) app.fuFlash -= dt;
     if (app.mode === 'playing') {
       const s = app.walk;
@@ -1598,7 +1636,7 @@
       if (app.wishT <= 0) { app.wishT = VISUAL.WISH_EVERY; app.wish = G.currentWish(s); app.wishShow = VISUAL.WISH_SHOW; }
       if (app.tutorial && app.tutorialStep < TUTORIAL.length) {
         app.tutorialTimer -= dt;
-        if (app.tutorialTimer <= 0 && app.toastTimer <= 0) { toast(TUTORIAL[app.tutorialStep++], '', 3.2); app.tutorialTimer = 3.8; }
+        if (app.tutorialTimer <= 0 && app.toastTimer <= 0 && app.toastGap <= 0 && !app.toastNext) { toast(TUTORIAL[app.tutorialStep++], 'tutorial', 3.2); app.tutorialTimer = 4.5; }
       }
       updateCamera(dt, L, false);
       updateHud();
