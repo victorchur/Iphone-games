@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07000f">
+  <meta name="description" content="Neon Runner - неоновый аркадный раннер на три полосы">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Neon Runner">
+  <meta name="format-detection" content="telephone=no">
+  <title>Neon Runner</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Игровое поле"></canvas>
+
+  <div id="hud" aria-live="off">
+    <div class="hud-left">
+      <div id="score">0</div>
+      <div id="best">Рекорд 0</div>
+    </div>
+    <div class="hud-right">
+      <button id="mute" type="button" aria-label="Выключить звук" aria-pressed="false">
+        <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/>
+          <path d="M15.5 8.5a5 5 0 0 1 0 7"/>
+          <path d="M18.5 5.5a9 9 0 0 1 0 13"/>
+        </svg>
+        <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/>
+          <path d="m16 9 5 5"/>
+          <path d="m21 9-5 5"/>
+        </svg>
+      </button>
+      <div id="coins">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#7a4300" stroke-width="2"/></svg>
+        <span id="coins-value">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay-start" class="overlay">
+    <div class="title">NEON<span>RUNNER</span></div>
+    <p class="subtitle">Свайп влево или вправо, либо тап по половине экрана - смена полосы.<br>Уворачивайся от барьеров, собирай монеты.</p>
+    <div id="start-best" class="best-line">Рекорд 0</div>
+    <div class="tap">Тапни, чтобы начать</div>
+  </div>
+
+  <div id="overlay-pause" class="overlay hidden">
+    <div class="title small">ПАУЗА</div>
+    <div class="tap">Тапни, чтобы продолжить</div>
+  </div>
+
+  <div id="overlay-over" class="overlay hidden">
+    <div class="title small"><span>СТОЛКНОВЕНИЕ</span></div>
+    <div class="label">Очки</div>
+    <div id="over-score" class="final-score">0</div>
+    <div id="over-new" class="new-record hidden">Новый рекорд!</div>
+    <div id="over-best" class="best-line">Рекорд 0</div>
+    <button id="btn-again" class="btn" type="button">Ещё раз</button>
+  </div>
+
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
