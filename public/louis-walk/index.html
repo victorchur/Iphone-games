@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#7a4b2a">
+  <meta name="description" content="Выгуляй Луи: мини-пудель гуляет в осеннем дворе. Надо пописать, покакать, набегаться и порадоваться до конца прогулки">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Выгуляй Луи">
+  <meta name="format-detection" content="telephone=no">
+  <title>Выгуляй Луи</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Осенний двор, где гуляет Луи"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <button id="btn-pause" class="icon-btn" type="button" aria-label="Пауза">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+      </button>
+      <div class="meters" role="group" aria-label="Цели прогулки">
+        <div id="m-pee" class="meter" title="Пописать"><span>💧</span></div>
+        <div id="m-poop" class="meter" title="Покакать"><span>💩</span></div>
+        <div id="m-energy" class="meter" title="Набегаться"><span>⚡</span></div>
+        <div id="m-happy" class="meter" title="Порадоваться"><span>❤️</span></div>
+      </div>
+      <div id="timer" class="timer">3:00</div>
+      <button id="btn-mute" class="icon-btn" type="button" aria-label="Выключить звук" aria-pressed="false">
+        <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="m16 9 5 5"/><path d="m21 9-5 5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <button id="btn-fu" class="fu hidden" type="button" aria-label="Фу: не трогать">Фу!</button>
+  <button id="btn-sniff" class="sniff hidden" type="button" aria-label="Нюх: найти запахи и вкусняшки">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <ellipse cx="24" cy="27" rx="15" ry="11" fill="#6b3b33"/>
+      <ellipse cx="18" cy="28" rx="3.6" ry="4.6" fill="#2b1612"/>
+      <ellipse cx="30" cy="28" rx="3.6" ry="4.6" fill="#2b1612"/>
+      <ellipse cx="20" cy="21" rx="5" ry="2.6" fill="#9a6a5e"/>
+      <path d="M10 12c3-4 7-4 9 0M38 12c-3-4-7-4-9 0" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
+    </svg>
+    <span>Нюх</span>
+  </button>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <section id="screen-menu" class="screen">
+    <div class="panel menu">
+      <a class="back-link" href="../">&lsaquo; Все игры</a>
+      <img class="menu-logo" src="icons/icon-192.png" alt="" width="104" height="104">
+      <h1>Выгуляй Луи</h1>
+      <p class="lead">Осенний двор, три минуты и четыре дела: пописать, покакать, набегаться и порадоваться. Потом домой, к подъезду.</p>
+      <button id="btn-start" class="btn primary big" type="button">Гулять!</button>
+      <div id="stats" class="stats"></div>
+      <h2>Друзья Луи</h2>
+      <div id="album" class="album"></div>
+      <details class="howto">
+        <summary>Как гулять</summary>
+        <ul>
+          <li>Веди пальцем по экрану, Луи идёт следом. Тянешь дальше - бежит. Хозяин идёт за ним на рулетке.</li>
+          <li><b>💧 Пописать.</b> Остановись у дерева, столба или куста. Луи метит только места с запахом, остальные «не то».</li>
+          <li><b>💩 Покакать.</b> Когда Луи нагуляется, остановись на траве, где никого нет. Не дёргай его, пока он сосредоточен.</li>
+          <li><b>⚡ Набегаться.</b> Бегай, прыгай в кучи листьев, гоняй голубей и котов, принеси мячик или палку, его кинут.</li>
+          <li><b>❤️ Порадоваться.</b> Понюхайся с доброй собакой, найди вкусняшку в листьях, подойди к бабушке на лавочке или к детям.</li>
+          <li><b>Фу!</b> Тянется к каштану, кости или обёртке - жми «Фу». Съест - заболит живот, и придётся снова какать.</li>
+          <li>Злая собака рычит и может сорваться с поводка. Беги к подъезду, туда она не пойдёт.</li>
+          <li>Кнопка «Нюх» показывает запахи: вкусняшки и места для метки.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <section id="screen-pause" class="screen hidden">
+    <div class="panel small">
+      <h2>Пауза</h2>
+      <button id="btn-resume" class="btn primary" type="button">Продолжить</button>
+      <button id="btn-quit" class="btn" type="button">Закончить прогулку</button>
+    </div>
+  </section>
+
+  <section id="screen-result" class="screen hidden">
+    <div class="panel result">
+      <h2 id="result-title">Отличная прогулка!</h2>
+      <canvas id="home-canvas" class="home" aria-label="Что дома после прогулки"></canvas>
+      <div id="result-stars" class="stars-big"></div>
+      <div id="result-score" class="result-score">0</div>
+      <div id="result-best" class="best-badge hidden">Новый рекорд!</div>
+      <ul id="result-rows" class="rows"></ul>
+      <button id="btn-again" class="btn primary" type="button">Ещё прогулка</button>
+      <button id="btn-menu" class="btn ghost" type="button">В меню</button>
+    </div>
+  </section>
+
+  <script src="logic.js"></script>
+  <script src="art.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

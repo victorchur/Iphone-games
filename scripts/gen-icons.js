@@ -13,6 +13,7 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const SETS = [
   { scene: require('./icons/neon'), dir: 'neon-runner/icons', prefix: 'icon' },
   { scene: require('./icons/louis'), dir: 'louis/icons', prefix: 'icon' },
+  { scene: require('./icons/walk'), dir: 'louis-walk/icons', prefix: 'icon' },
   { scene: require('./icons/hub'), dir: 'icons', prefix: 'hub' }
 ];
 
