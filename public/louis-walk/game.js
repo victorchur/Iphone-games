@@ -16,7 +16,12 @@
     VIEW_WIDTH: 360,      // сколько экранных единиц двора видно по ширине
     DPR_MAX: 2,
     BG_DPR_MAX: 2,
-    BG_MAX_PIXELS: 12e6,
+    TILE: 256,            // тайл земли в экранных единицах
+    TILE_CACHE: 40,       // сколько тайлов держим в памяти
+    TILES_PER_FRAME: 2,   // сколько новых тайлов рисуем за кадр
+    OVERVIEW_SCALE: 0.4,  // обзорная картинка района
+    MINIMAP_W: 132,
+    LEAVES: 14000,        // опавших листьев на земле
     NIGHT_RES: 0.5,
     CAMERA_LERP: 6,
     JOY_RADIUS: 58,
@@ -31,7 +36,9 @@
     tile: '#a49b98', tileDark: '#958c89', tileLight: '#b3aaa6', sidewalk: '#8f8c88',
     rubber: '#3f7d6e', sand: '#e9d39a', wallA: '#e6d3bf', wallB: '#d2bea9', wallShade: '#c9b39d',
     roof: '#7b8487', roofEdge: '#5f676a', window: '#9fc4dc', windowFrame: '#f4efe8', windowLit: '#ffd27f',
-    door: '#6b4630', homeDoor: '#7a3e1d', canopy: '#7d8a96', fence: '#2f4f3a'
+    door: '#6b4630', homeDoor: '#7a3e1d', canopy: '#7d8a96', fence: '#2f4f3a',
+    road: '#55524e', asphalt: '#6a6763', dirt: '#b08a5a', court: '#c0563b', gravel: '#cdbb96',
+    water: '#4b93b3', waterDeep: '#356f86', shore: '#b7a98d'
   };
   const STORAGE_MUTE = 'louis-walk-muted';
   const STORAGE_TUTORIAL = 'louis-walk-tutorial';
@@ -56,22 +63,20 @@
 
   /* ================================ Состояние ================================ */
   let W = 0, H = 0, dpr = 1, scale = 1, viewW = 360, viewH = 700;
-  const BOUNDS = { x0: -WORLD.size * ISO.X - 80, x1: WORLD.size * ISO.X + 80, y0: -250, y1: 2 * WORLD.size * ISO.Y + 90 };
-  let bg = null, bgScale = 1, bgKey = '';
+  const safe = { left: 0, bottom: 0 };
   const overlay = document.createElement('canvas');
   const octx = overlay.getContext('2d');
-  let litWindows = [];
 
   const app = {
     mode: 'menu', walk: null, demo: null, progress: G.loadProgress(safeStorage),
-    cam: { x: -180, y: 80 }, time: 0, particles: [], bubbles: [], rings: [], drops: [],
+    cam: { x: -180, y: 80 }, time: 0, particles: [], bubbles: [], rings: [],
     wishT: 3, wishShow: 0, wish: null, heartbeat: 0, ambient: 3, leafT: 0,
     tutorial: safeStorage.getItem(STORAGE_TUTORIAL) !== '1', tutorialStep: 0, tutorialTimer: 0,
     lastResult: null, endTimer: 0, homeT: 0, fuFlash: 0, toastTimer: 0
   };
 
   /* ================================== Звук ================================== */
-  const audio = { ctx: null, master: null, noise: null, rain: null, muted: safeStorage.getItem(STORAGE_MUTE) === '1' };
+  const audio = { ctx: null, master: null, noise: null, muted: safeStorage.getItem(STORAGE_MUTE) === '1' };
   function ensureAudio() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -145,6 +150,10 @@
     flutter() { for (let i = 0; i < 6; i++) noise({ dur: 0.04, gain: 0.07, delay: i * 0.05, freq: 1800, q: 2 }); },
     meow() { tone({ type: 'triangle', freq: 700, to: 1100, dur: 0.18, gain: 0.05 }); tone({ type: 'triangle', freq: 1100, to: 600, dur: 0.25, gain: 0.05, delay: 0.17 }); },
     splash() { noise({ dur: 0.25, gain: 0.14, type: 'lowpass', freq: 1200 }); },
+    quack() { for (let i = 0; i < 2; i++) tone({ type: 'sawtooth', freq: 520, to: 360, dur: 0.11, gain: 0.05, delay: i * 0.16, filter: 1400 }); },
+    ding() { tone({ freq: 1320, dur: 0.18, gain: 0.05 }); tone({ freq: 990, dur: 0.25, gain: 0.04, delay: 0.12 }); },
+    hop() { tone({ type: 'triangle', freq: 420, to: 840, dur: 0.12, gain: 0.06 }); },
+    kick() { noise({ dur: 0.06, gain: 0.16, type: 'lowpass', freq: 700 }); tone({ freq: 160, to: 90, dur: 0.08, gain: 0.1 }); },
     throw() { noise({ dur: 0.2, gain: 0.06, type: 'bandpass', freq: 600, q: 0.7 }); },
     wind() { noise({ dur: 1.4, gain: 0.08, type: 'bandpass', freq: 500, q: 0.4 }); },
     chirp(night) {
@@ -155,18 +164,6 @@
     sad() { [440, 392, 330, 262].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.28, gain: 0.06, delay: i * 0.2 })); },
     click() { tone({ type: 'triangle', freq: 520, to: 700, dur: 0.05, gain: 0.05 }); }
   };
-  function startRain(on) {
-    if (!audio.ctx) return;
-    if (audio.rain) { try { audio.rain.src.stop(); } catch (e) { /* ignore */ } audio.rain = null; }
-    if (!on || audio.muted) return;
-    const c = audio.ctx, src = c.createBufferSource();
-    src.buffer = audio.noise; src.loop = true;
-    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1500;
-    const g = c.createGain(); g.gain.value = 0.035;
-    src.connect(f).connect(g).connect(audio.master);
-    src.start();
-    audio.rain = { src, g };
-  }
   function setMuted(m) {
     audio.muted = m;
     safeStorage.setItem(STORAGE_MUTE, m ? '1' : '0');
@@ -174,8 +171,6 @@
     ui.mute.classList.toggle('muted', m);
     ui.mute.setAttribute('aria-label', m ? 'Включить звук' : 'Выключить звук');
     ui.mute.setAttribute('aria-pressed', m ? 'true' : 'false');
-    if (!m && app.walk && app.walk.weather.rain && !audio.rain) startRain(true);
-    if (m) startRain(false);
   }
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { /* ignore */ } }
 
@@ -183,164 +178,425 @@
   const P = (x, y, z = 0) => ({ x: (x - y) * ISO.X, y: (x + y) * ISO.Y - z });
   const depth = (x, y) => x + y;
 
-  /* ============================== Фон: земля и дом ============================== */
-  function paintBackground(s) {
-    const weather = s ? s.weather : { rain: false, evening: false };
-    const key = `${W}x${H}@${dpr}|${weather.evening ? 'e' : 'd'}${weather.rain ? 'r' : ''}`;
-    if (key === bgKey && bg) return;
-    bgKey = key;
-    const bw = BOUNDS.x1 - BOUNDS.x0, bh = BOUNDS.y1 - BOUNDS.y0;
-    let sc = scale * Math.min(dpr, VISUAL.BG_DPR_MAX);
-    sc = Math.min(sc, Math.sqrt(VISUAL.BG_MAX_PIXELS / (bw * bh)));
-    bgScale = sc;
-    if (!bg) bg = document.createElement('canvas');
-    bg.width = Math.ceil(bw * sc);
-    bg.height = Math.ceil(bh * sc);
-    const c = bg.getContext('2d');
+  /* ============================== Фон: земля и дома тайлами ============================== */
+  // Район большой, одним холстом его не нарисовать. Земля рисуется тайлами по мере надобности,
+  // а пока тайл не готов, на его месте грубая обзорная картинка. Она же основа мини-карты.
+  const S = WORLD.size;
+  const BOUNDS = { x0: -S * ISO.X - 80, x1: S * ISO.X + 80, y0: -270, y1: 2 * S * ISO.Y + 90 };
+  const TILE = VISUAL.TILE;
+  const COLS = Math.ceil((BOUNDS.x1 - BOUNDS.x0) / TILE), ROWS = Math.ceil((BOUNDS.y1 - BOUNDS.y0) / TILE);
+  const tiles = new Map();
+  const tilePool = [];
+  let groundKey = '', frameNo = 0;
+  let overview = null, ovSc = 1, minimapBase = null;
+  let windows = [], litWindows = [];
+
+  function hash2(x, y) {
+    let h = Math.imul(x | 0, 374761393) ^ Math.imul((y | 0) + 1013, 668265263);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  const tileIndex = (sx, sy) => ({ ix: Math.floor((sx - BOUNDS.x0) / TILE), iy: Math.floor((sy - BOUNDS.y0) / TILE) });
+
+  // Пятна на газоне и опавшие листья раскладываются один раз, листья сразу по тайлам
+  const GROUND = (() => {
     const rnd = A.mulberry32(77);
-    const screenT = () => c.setTransform(sc, 0, 0, sc, -BOUNDS.x0 * sc, -BOUNDS.y0 * sc);
-    const worldT = () => c.setTransform(ISO.X * sc, ISO.Y * sc, -ISO.X * sc, ISO.Y * sc, -BOUNDS.x0 * sc, -BOUNDS.y0 * sc);
-
-    // Улица за забором
-    screenT();
-    c.fillStyle = COLORS.street;
-    c.fillRect(BOUNDS.x0, BOUNDS.y0, bw, bh);
-    worldT();
-    c.fillStyle = COLORS.curb; c.fillRect(-40, -40, 1110, 1110);
-    c.fillStyle = '#6e6a62'; c.fillRect(-40, -40, 1080, 1080);
-    // Газон
-    c.fillStyle = COLORS.lawn; c.fillRect(0, 0, 1000, 1000);
-    for (let i = 0; i < 90; i++) {
-      c.fillStyle = rnd() < 0.5 ? 'rgba(255,240,180,0.07)' : 'rgba(40,60,10,0.08)';
-      c.beginPath(); c.ellipse(rnd() * 1000, rnd() * 1000, 30 + rnd() * 80, 20 + rnd() * 60, rnd() * 3, 0, Math.PI * 2); c.fill();
-    }
-    // Дорожки из плитки, как на фото
-    for (const p of WORLD.paths) {
-      c.fillStyle = p.y < 120 || p.x < 125 && p.w < 70 ? COLORS.sidewalk : COLORS.tile;
-      c.fillRect(p.x, p.y, p.w, p.h);
-      const tw = 22, th = 11;
-      for (let ty = p.y; ty < p.y + p.h; ty += th) {
-        const off = Math.floor((ty - p.y) / th) % 2 ? tw / 2 : 0;
-        for (let tx = p.x - off; tx < p.x + p.w; tx += tw) {
-          const x0 = Math.max(p.x, tx), x1 = Math.min(p.x + p.w, tx + tw), y1 = Math.min(p.y + p.h, ty + th);
-          const v = rnd();
-          c.fillStyle = v < 0.3 ? COLORS.tileDark : v > 0.8 ? COLORS.tileLight : 'rgba(0,0,0,0)';
-          c.fillRect(x0 + 0.6, ty + 0.6, x1 - x0 - 1.2, y1 - ty - 1.2);
-        }
-      }
-      c.strokeStyle = 'rgba(70,60,55,0.25)'; c.lineWidth = 0.8;
-      c.strokeRect(p.x, p.y, p.w, p.h);
-    }
-    // Детская площадка
-    const pg = WORLD.playground;
-    c.fillStyle = '#d9d2c5'; c.fillRect(pg.x - 4, pg.y - 4, pg.w + 8, pg.h + 8);
-    c.fillStyle = COLORS.rubber; c.fillRect(pg.x, pg.y, pg.w, pg.h);
-    c.fillStyle = 'rgba(255,255,255,0.08)';
-    for (let i = 0; i < 6; i++) c.fillRect(pg.x + 20 + i * 38, pg.y + 10, 14, pg.h - 20);
-    const sb = WORLD.sandbox;
-    c.fillStyle = '#a0683a'; c.fillRect(sb.x - 5, sb.y - 5, sb.w + 10, sb.h + 10);
-    c.fillStyle = COLORS.sand; c.fillRect(sb.x, sb.y, sb.w, sb.h);
-    // Пятна от меток будут рисоваться поверх, а здесь клумба у подъезда
-    c.fillStyle = '#6d4c35'; c.fillRect(380, 118, 80, 40); c.fillRect(580, 118, 70, 40);
-
-    // Опавшие листья: по экрану, чтобы не сплющивались
-    screenT();
-    for (let i = 0; i < 4200; i++) {
+    const blobs = [], leaves = new Map();
+    for (let i = 0; i < 520; i++) blobs.push({ x: rnd() * S, y: rnd() * S, rx: 30 + rnd() * 90, ry: 20 + rnd() * 70, rot: rnd() * 3, light: rnd() < 0.5 });
+    const inBuilding = (x, y) => WORLD.buildings.some((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    for (let i = 0; i < VISUAL.LEAVES; i++) {
       let x, y;
       if (rnd() < 0.55) {
         const t = WORLD.trees[Math.floor(rnd() * WORLD.trees.length)];
         const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 120;
         x = t.x + Math.cos(a) * d; y = t.y + Math.sin(a) * d;
-      } else { x = rnd() * 1000; y = rnd() * 1000; }
-      if (x < 2 || y < 2 || x > 998 || y > 998) continue;
-      const onLawn = G.isLawn(x, y);
-      if (!onLawn && rnd() < 0.8) continue;
-      if (x < 120 || y < 112) continue;
-      const p = P(x, y);
-      A.leafShape(c, p.x, p.y, 2.2 + rnd() * 1.8, rnd() * 6, A.LEAF_COLORS[Math.floor(rnd() * A.LEAF_COLORS.length)]);
+      } else { x = rnd() * S; y = rnd() * S; }
+      const size = 2.2 + rnd() * 1.8, rot = rnd() * 6, color = A.LEAF_COLORS[Math.floor(rnd() * A.LEAF_COLORS.length)], keep = rnd();
+      if (x < 2 || y < 2 || x > S - 2 || y > S - 2 || inBuilding(x, y) || G.inWater(x, y)) continue;
+      if (!G.isLawn(x, y) && keep < 0.85) continue;
+      const p = P(x, y), ti = tileIndex(p.x, p.y), key = ti.ix * 1024 + ti.iy;
+      if (!leaves.has(key)) leaves.set(key, []);
+      leaves.get(key).push({ x: p.x, y: p.y, size, rot, color });
     }
-    // Тени деревьев
-    for (const t of WORLD.trees) {
-      const p = P(t.x, t.y);
-      c.fillStyle = 'rgba(30,40,10,0.18)';
-      c.beginPath(); c.ellipse(p.x + 8, p.y + 2, 42, 18, 0, 0, Math.PI * 2); c.fill();
-    }
+    return { blobs, leaves };
+  })();
 
-    paintBuildings(c, screenT, weather.evening, rnd);
+  // Дома и шлагбаумы между ними: перед ними никто не ходит, рисуем их в фон от дальних к ближним
+  const BACKDROP = WORLD.buildings.map((b, i) => ({ b, i, height: b.height }))
+    .concat(WORLD.solids.filter((q) => q.kind === 'barrier').map((b) => ({ b, i: -1, height: 34 })))
+    .sort((a, c) => a.b.x + a.b.y - (c.b.x + c.b.y));
+  const PATH_ORDER = ['dirt', 'sidewalk', 'asphalt', 'road', 'tile', 'gravel', 'rubber', 'court'];
+  const BUILDING_STYLE = [
+    { left: COLORS.wallB, right: COLORS.wallA, plinthL: '#a99582', plinthR: '#b8a48f', roof: COLORS.roof },
+    { left: COLORS.wallB, right: COLORS.wallA, plinthL: '#a99582', plinthR: '#b8a48f', roof: COLORS.roof },
+    { left: '#b9674c', right: '#c97a5d', plinthL: '#8e4c39', plinthR: '#9c5741', roof: '#6d6463' },
+    { left: '#d8c88f', right: '#e8daa4', plinthL: '#b3a273', plinthR: '#c2b07f', roof: '#77807f' }
+  ];
+
+  /** Окна всех домов: рамка, стекло и горит ли вечером. */
+  function buildWindows(evening) {
+    windows = []; litWindows = [];
+    const F = VISUAL.FLOOR_H;
+    WORLD.buildings.forEach((b, bi) => {
+      const x0 = b.x, x1 = b.x + b.w, y0 = b.y, y1 = b.y + b.h;
+      const floors = Math.floor((b.height - 56) / F) + 1;
+      const front = b.face;
+      const skip = (along, f, onFront) => f === 0 && onFront && b.doors.some((d) => Math.abs(d.at - along) < (d.shop ? 110 : 34));
+      const addRow = (fixed, a0, a1, isY, onFront) => {
+        for (let f = 0; f < floors; f++) {
+          for (let a = a0 + 30; a < a1 - 40; a += 52) {
+            if (skip(a + 14, f, onFront)) continue;
+            const z0 = 22 + f * F, z1 = z0 + 24;
+            const pt = isY ? (u, z) => P(u, fixed, z) : (u, z) => P(fixed, u, z);
+            const lit = evening && hash2(bi * 977 + f * 31, a) < 0.5;
+            const w = { frame: [pt(a - 2, z0 - 2), pt(a + 30, z0 - 2), pt(a + 30, z1 + 2), pt(a - 2, z1 + 2)],
+              glass: [pt(a, z0), pt(a + 28, z0), pt(a + 28, z1), pt(a, z1)], lit, bi };
+            const xs = w.frame.map((p) => p.x), ys = w.frame.map((p) => p.y);
+            w.box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+            windows.push(w);
+            if (lit) litWindows.push({ x: (w.box.x0 + w.box.x1) / 2, y: (w.box.y0 + w.box.y1) / 2 });
+          }
+        }
+      };
+      addRow(y1, x0, x1, true, front === 'y');
+      addRow(x1, y0, y1, false, front === 'x');
+    });
+    // Витрина магазина и окно ларька светятся вечером
+    const shop = WORLD.buildings[2], sd = shop.doors.find((d) => d.shop);
+    if (evening) {
+      const p = P(sd.at, shop.y + shop.h, 26); litWindows.push(p, { x: p.x - 40, y: p.y - 20 }, { x: p.x + 40, y: p.y + 20 });
+      const k = WORLD.kiosk, kp = P(k.x + k.w / 2, k.y + k.h, 34); litWindows.push(kp);
+    }
   }
 
-  function paintBuildings(c, screenT, evening, rnd) {
+  function worldBox(r, pad) {
+    const pts = [[r.x0, r.y0], [r.x1, r.y0], [r.x0, r.y1], [r.x1, r.y1]].map(([sx, sy]) => ({ x: (sx / ISO.X + sy / ISO.Y) / 2, y: (sy / ISO.Y - sx / ISO.X) / 2 }));
+    return { x0: Math.min(...pts.map((p) => p.x)) - pad, x1: Math.max(...pts.map((p) => p.x)) + pad,
+      y0: Math.min(...pts.map((p) => p.y)) - pad, y1: Math.max(...pts.map((p) => p.y)) + pad };
+  }
+  const hitRect = (wb, x, y, w, h) => x < wb.x1 && x + w > wb.x0 && y < wb.y1 && y + h > wb.y0;
+
+  /** Рисует землю и дома в прямоугольнике экрана r. sc - пикселей на единицу, lite - без мелких деталей. */
+  function paintGround(c, r, sc, lite) {
+    const ox = -r.x0 * sc, oy = -r.y0 * sc;
+    const screenT = () => c.setTransform(sc, 0, 0, sc, ox, oy);
+    const worldT = () => c.setTransform(ISO.X * sc, ISO.Y * sc, -ISO.X * sc, ISO.Y * sc, ox, oy);
+    const wb = worldBox(r, 60);
     screenT();
-    litWindows = [];
+    c.fillStyle = COLORS.street; c.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    worldT();
+    c.fillStyle = COLORS.curb; c.fillRect(-40, -40, S + 110, S + 110);
+    c.fillStyle = '#6e6a62'; c.fillRect(-40, -40, S + 80, S + 80);
+    c.fillStyle = COLORS.lawn; c.fillRect(0, 0, S, S);
+    if (!lite) {
+      for (const b of GROUND.blobs) {
+        if (b.x + 120 < wb.x0 || b.x - 120 > wb.x1 || b.y + 120 < wb.y0 || b.y - 120 > wb.y1) continue;
+        c.fillStyle = b.light ? 'rgba(255,240,180,0.07)' : 'rgba(40,60,10,0.08)';
+        c.beginPath(); c.ellipse(b.x, b.y, b.rx, b.ry, b.rot, 0, Math.PI * 2); c.fill();
+      }
+    }
+    for (const kind of PATH_ORDER) for (const p of WORLD.paths) if (p.kind === kind && hitRect(wb, p.x, p.y, p.w, p.h)) paintPath(c, p, wb, lite);
+    paintZebras(c, wb);
+    paintAreas(c, wb, lite);
+    screenT();
+    if (!lite) {
+      const a = tileIndex(r.x0, r.y0), b = tileIndex(r.x1 - 1, r.y1 - 1);
+      for (let ix = a.ix - 1; ix <= b.ix + 1; ix++) for (let iy = a.iy - 1; iy <= b.iy + 1; iy++) {
+        const list = GROUND.leaves.get(ix * 1024 + iy);
+        if (!list) continue;
+        for (const l of list) if (l.x > r.x0 - 6 && l.x < r.x1 + 6 && l.y > r.y0 - 6 && l.y < r.y1 + 6) A.leafShape(c, l.x, l.y, l.size, l.rot, l.color);
+      }
+    }
+    c.fillStyle = 'rgba(30,40,10,0.18)';
+    for (const t of WORLD.trees) {
+      const p = P(t.x, t.y);
+      if (p.x < r.x0 - 60 || p.x > r.x1 + 60 || p.y < r.y0 - 30 || p.y > r.y1 + 30) continue;
+      c.beginPath(); c.ellipse(p.x + 8, p.y + 2, 42, 18, 0, 0, Math.PI * 2); c.fill();
+    }
+    // Дальние первыми: торец дома слева прячется за домом у подъезда
+    for (const { b, i, height } of BACKDROP) {
+      const top = P(b.x, b.y, height), left = P(b.x, b.y + b.h), right = P(b.x + b.w, b.y), bottom = P(b.x + b.w, b.y + b.h);
+      if (left.x > r.x1 || right.x < r.x0 || top.y > r.y1 || bottom.y < r.y0) continue;
+      if (i < 0) drawSolid(c, b, false); else paintBuilding(c, b, i, r);
+    }
+  }
+
+  function paintPath(c, p, wb, lite) {
+    const STYLE = {
+      sidewalk: { base: COLORS.sidewalk, cells: true }, tile: { base: COLORS.tile, cells: true },
+      road: { base: COLORS.road }, asphalt: { base: COLORS.asphalt }, rubber: { base: COLORS.rubber },
+      dirt: { base: COLORS.dirt }, court: { base: COLORS.court }, gravel: { base: COLORS.gravel }
+    }[p.kind];
+    c.fillStyle = STYLE.base;
+    c.fillRect(p.x, p.y, p.w, p.h);
+    const x0 = Math.max(p.x, wb.x0), x1 = Math.min(p.x + p.w, wb.x1), y0 = Math.max(p.y, wb.y0), y1 = Math.min(p.y + p.h, wb.y1);
+    if (lite) return;
+    if (STYLE.cells) {
+      // Плитка, как на фото двора: кирпичики вразбежку
+      const tw = 22, th = 11;
+      for (let ty = p.y + Math.floor((y0 - p.y) / th) * th; ty < y1; ty += th) {
+        const row = Math.round((ty - p.y) / th), off = row % 2 ? tw / 2 : 0;
+        for (let tx = p.x - off + Math.floor((x0 - p.x + off) / tw) * tw; tx < x1; tx += tw) {
+          const v = hash2(Math.round(tx * 2), Math.round(ty * 2));
+          if (v >= 0.3 && v <= 0.8) continue;
+          const cx0 = Math.max(p.x, tx), cx1 = Math.min(p.x + p.w, tx + tw), cy1 = Math.min(p.y + p.h, ty + th);
+          c.fillStyle = v < 0.3 ? (p.kind === 'tile' ? COLORS.tileDark : '#84817c') : (p.kind === 'tile' ? COLORS.tileLight : '#9a9792');
+          c.fillRect(cx0 + 0.6, ty + 0.6, cx1 - cx0 - 1.2, cy1 - ty - 1.2);
+        }
+      }
+    } else if (p.kind === 'road') {
+      // Разметка: прерывистая по оси, у перекрёстка нет
+      c.fillStyle = 'rgba(240,236,220,0.75)';
+      const along = p.w > p.h;
+      const len = along ? p.w : p.h;
+      for (let a = 0; a < len; a += 56) {
+        const u = (along ? p.x : p.y) + a;
+        if (u > 1270 && u < 1430) continue;
+        if (along) c.fillRect(u, p.y + p.h / 2 - 1.5, 30, 3); else c.fillRect(p.x + p.w / 2 - 1.5, u, 3, 30);
+      }
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      if (along) { c.fillRect(p.x, p.y, p.w, 3); c.fillRect(p.x, p.y + p.h - 3, p.w, 3); } else { c.fillRect(p.x, p.y, 3, p.h); c.fillRect(p.x + p.w - 3, p.y, 3, p.h); }
+    } else if (p.kind === 'asphalt') {
+      c.fillStyle = 'rgba(255,255,255,0.5)';
+      for (const g of WORLD.solids) if (g.kind === 'garages') for (let x = g.x; x <= g.x + g.w; x += 80) c.fillRect(x - 1, p.y, 2, 40);
+      c.fillStyle = 'rgba(20,20,20,0.18)';
+      for (let i = 0; i < 9; i++) { c.beginPath(); c.ellipse(260 + i * 110 + hash2(i, 3) * 40, p.y + 20 + hash2(i, 7) * 40, 9, 6, 0, 0, Math.PI * 2); c.fill(); }
+    } else if (p.kind === 'rubber') {
+      c.fillStyle = 'rgba(255,255,255,0.08)';
+      for (let i = 0; i < 8; i++) c.fillRect(p.x + 20 + i * 42, p.y + 10, 16, p.h - 20);
+    } else if (p.kind === 'dirt' || p.kind === 'gravel') {
+      // Крошка: детерминированные точки по сетке
+      const step = p.kind === 'dirt' ? 14 : 9;
+      for (let y = y0 - ((y0 - p.y) % step); y < y1; y += step) for (let x = x0 - ((x0 - p.x) % step); x < x1; x += step) {
+        const v = hash2(Math.round(x), Math.round(y));
+        if (v < 0.55) continue;
+        c.fillStyle = v > 0.8 ? 'rgba(255,255,255,0.18)' : 'rgba(60,40,20,0.16)';
+        c.fillRect(x + hash2(Math.round(y), 5) * step, y + hash2(Math.round(x), 9) * step, 2.4, 2.4);
+      }
+      c.strokeStyle = 'rgba(70,50,30,0.35)'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, p.h);
+    } else if (p.kind === 'court') {
+      c.fillStyle = '#d0694a'; c.fillRect(p.x + 8, p.y + 8, p.w - 16, p.h - 16);
+      c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 3;
+      c.strokeRect(p.x + 14, p.y + 14, p.w - 28, p.h - 28);
+      c.beginPath(); c.moveTo(p.x + 14, p.y + p.h / 2); c.lineTo(p.x + p.w - 14, p.y + p.h / 2); c.stroke();
+      c.beginPath(); c.arc(p.x + p.w / 2, p.y + p.h / 2, 45, 0, Math.PI * 2); c.stroke();
+      c.strokeRect(p.x + p.w / 2 - 60, p.y + 14, 120, 70); c.strokeRect(p.x + p.w / 2 - 60, p.y + p.h - 84, 120, 70);
+    }
+  }
+
+  function paintZebras(c, wb) {
+    c.fillStyle = 'rgba(245,245,240,0.85)';
+    for (const sw of WORLD.paths) {
+      if (sw.kind !== 'sidewalk') continue;
+      for (const rd of WORLD.paths) {
+        if (rd.kind !== 'road') continue;
+        const x0 = Math.max(sw.x, rd.x), x1 = Math.min(sw.x + sw.w, rd.x + rd.w), y0 = Math.max(sw.y, rd.y), y1 = Math.min(sw.y + sw.h, rd.y + rd.h);
+        if (x1 <= x0 || y1 <= y0 || !hitRect(wb, x0, y0, x1 - x0, y1 - y0)) continue;
+        if (sw.w > sw.h) for (let x = x0 + 4; x < x1 - 4; x += 14) c.fillRect(x, y0 + 2, 7, y1 - y0 - 4);
+        else for (let y = y0 + 4; y < y1 - 4; y += 14) c.fillRect(x0 + 2, y, x1 - x0 - 4, 7);
+      }
+    }
+  }
+
+  /** Пруд, песочница, клумбы у подъезда, следы лап на собачьей площадке. Рисуется в осях земли. */
+  function paintAreas(c, wb, lite) {
+    for (const pd of WORLD.ponds) {
+      if (!hitRect(wb, pd.x - pd.rx - pd.ring, pd.y - pd.ry - pd.ring, (pd.rx + pd.ring) * 2, (pd.ry + pd.ring) * 2)) continue;
+      c.fillStyle = COLORS.shore; c.beginPath(); c.ellipse(pd.x, pd.y, pd.rx + pd.ring, pd.ry + pd.ring, 0, 0, Math.PI * 2); c.fill();
+      if (!lite) {
+        for (let i = 0; i < 90; i++) {
+          const a = (i / 90) * Math.PI * 2, k = 1.02 + hash2(i, 11) * 0.12;
+          c.fillStyle = hash2(i, 13) < 0.5 ? '#9c9078' : '#cfc3aa';
+          c.beginPath(); c.ellipse(pd.x + Math.cos(a) * pd.rx * k, pd.y + Math.sin(a) * pd.ry * k, 5 + hash2(i, 17) * 4, 4, a, 0, Math.PI * 2); c.fill();
+        }
+      }
+      c.fillStyle = COLORS.waterDeep; c.beginPath(); c.ellipse(pd.x, pd.y, pd.rx, pd.ry, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = COLORS.water; c.beginPath(); c.ellipse(pd.x - 8, pd.y - 8, pd.rx - 16, pd.ry - 14, 0, 0, Math.PI * 2); c.fill();
+      if (!lite) {
+        c.fillStyle = 'rgba(255,255,255,0.12)'; c.beginPath(); c.ellipse(pd.x - 40, pd.y - 50, pd.rx * 0.45, pd.ry * 0.25, 0, 0, Math.PI * 2); c.fill();
+        // Кувшинки
+        for (let i = 0; i < 9; i++) {
+          const a = hash2(i, 21) * Math.PI * 2, d = 0.55 + hash2(i, 23) * 0.35;
+          const x = pd.x + Math.cos(a) * pd.rx * d, y = pd.y + Math.sin(a) * pd.ry * d;
+          c.fillStyle = i % 3 ? '#4f8a3a' : '#5f9c45';
+          c.beginPath(); c.moveTo(x, y); c.arc(x, y, 9, a + 0.4, a + Math.PI * 2 - 0.2); c.closePath(); c.fill();
+          if (i % 4 === 0) { c.fillStyle = '#f8c8dc'; c.beginPath(); c.arc(x + 2, y - 2, 3, 0, Math.PI * 2); c.fill(); }
+        }
+      }
+    }
+    const pg = WORLD.playground;
+    if (hitRect(wb, pg.x - 10, pg.y - 10, pg.w + 20, pg.h + 20)) {
+      c.strokeStyle = '#d9d2c5'; c.lineWidth = 6; c.strokeRect(pg.x - 3, pg.y - 3, pg.w + 6, pg.h + 6);
+      const sb = WORLD.sandbox;
+      c.fillStyle = '#a0683a'; c.fillRect(sb.x - 5, sb.y - 5, sb.w + 10, sb.h + 10);
+      c.fillStyle = COLORS.sand; c.fillRect(sb.x, sb.y, sb.w, sb.h);
+    }
+    // Клумбы у подъезда, на них тыквы
+    if (hitRect(wb, 600, 118, 220, 40)) { c.fillStyle = '#6d4c35'; c.fillRect(612, 121, 48, 26); c.fillRect(752, 121, 48, 26); }
+    // Площадка у фонтана: круг из плитки
+    const f = WORLD.fountain;
+    if (hitRect(wb, f.x - 120, f.y - 120, 240, 240)) {
+      c.strokeStyle = 'rgba(90,80,75,0.35)'; c.lineWidth = 2;
+      for (const rr of [70, 95]) { c.beginPath(); c.arc(f.x, f.y, rr, 0, Math.PI * 2); c.stroke(); }
+    }
+    const dp = WORLD.dogPark;
+    if (!lite && hitRect(wb, dp.x, dp.y, dp.w, dp.h)) {
+      c.fillStyle = 'rgba(80,50,25,0.28)';
+      for (let i = 0; i < 40; i++) {
+        const x = dp.x + 20 + hash2(i, 31) * (dp.w - 40), y = dp.y + 20 + hash2(i, 37) * (dp.h - 40), a = hash2(i, 41) * 6;
+        for (let k = 0; k < 4; k++) {
+          const px = x + Math.cos(a) * k * 16 + (k % 2 ? 5 : -5) * Math.sin(a), py = y + Math.sin(a) * k * 16 - (k % 2 ? 5 : -5) * Math.cos(a);
+          c.beginPath(); c.ellipse(px, py, 3, 2.4, 0, 0, Math.PI * 2); c.fill();
+        }
+      }
+    }
+  }
+
+  function paintBuilding(c, b, bi, r) {
+    const st = BUILDING_STYLE[bi] || BUILDING_STYLE[0];
     const poly = (pts, color) => { c.fillStyle = color; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.closePath(); c.fill(); };
-    const Hb = 230, F = VISUAL.FLOOR_H;
-    const A0 = WORLD.buildings[0], B0 = WORLD.buildings[1];
-    const yA = A0.y + A0.h; // фасад дома A по y = 110
-    const xB = B0.x + B0.w; // фасад дома B по x = 120
-
-    // Крыши
-    poly([P(0, 0, Hb), P(1000, 0, Hb), P(1000, yA, Hb), P(xB, yA, Hb), P(xB, 1000, Hb), P(0, 1000, Hb)], COLORS.roof);
-    // Фасад B (смотрит вправо-вниз) и торец A
-    poly([P(xB, yA, 0), P(xB, 1000, 0), P(xB, 1000, Hb), P(xB, yA, Hb)], COLORS.wallA);
-    poly([P(1000, 0, 0), P(1000, yA, 0), P(1000, yA, Hb), P(1000, 0, Hb)], COLORS.wallA);
-    // Фасад A (смотрит влево-вниз) и торец B
-    poly([P(xB, yA, 0), P(1000, yA, 0), P(1000, yA, Hb), P(xB, yA, Hb)], COLORS.wallB);
-    poly([P(0, 1000, 0), P(xB, 1000, 0), P(xB, 1000, Hb), P(0, 1000, Hb)], COLORS.wallB);
-    // Цоколь и парапет
-    poly([P(xB, yA, 0), P(1000, yA, 0), P(1000, yA, 14), P(xB, yA, 14)], '#a99582');
-    poly([P(xB, yA, 0), P(xB, 1000, 0), P(xB, 1000, 14), P(xB, yA, 14)], '#b8a48f');
+    const x0 = b.x, x1 = b.x + b.w, y0 = b.y, y1 = b.y + b.h, Hb = b.height;
+    poly([P(x0, y0, Hb), P(x1, y0, Hb), P(x1, y1, Hb), P(x0, y1, Hb)], st.roof);
+    poly([P(x0, y1, 0), P(x1, y1, 0), P(x1, y1, Hb), P(x0, y1, Hb)], st.left);
+    poly([P(x1, y0, 0), P(x1, y1, 0), P(x1, y1, Hb), P(x1, y0, Hb)], st.right);
+    poly([P(x0, y1, 0), P(x1, y1, 0), P(x1, y1, 14), P(x0, y1, 14)], st.plinthL);
+    poly([P(x1, y0, 0), P(x1, y1, 0), P(x1, y1, 14), P(x1, y0, 14)], st.plinthR);
     c.strokeStyle = COLORS.roofEdge; c.lineWidth = 3;
-    c.beginPath(); const e1 = P(xB, 1000, Hb), e2 = P(xB, yA, Hb), e3 = P(1000, yA, Hb);
-    c.moveTo(e1.x, e1.y); c.lineTo(e2.x, e2.y); c.lineTo(e3.x, e3.y); c.stroke();
-
-    const win = (pts, lit) => {
-      poly(pts.frame, COLORS.windowFrame);
-      poly(pts.glass, lit ? COLORS.windowLit : COLORS.window);
-      if (lit) { const m = pts.glass.reduce((a, p) => ({ x: a.x + p.x / 4, y: a.y + p.y / 4 }), { x: 0, y: 0 }); litWindows.push(m); }
-    };
-    // Окна фасада A вдоль x
-    const doorsA = A0.doorsAlongX;
-    for (let f = 0; f < 5; f++) {
-      for (let x = xB + 30; x < 980; x += 52) {
-        if (f === 0 && doorsA.some((d) => Math.abs(d - (x + 14)) < 34)) continue;
-        const z0 = 22 + f * F, z1 = z0 + 24, x0 = x, x1 = x + 28;
-        const lit = evening && rnd() < 0.5;
-        win({ frame: [P(x0 - 2, yA, z0 - 2), P(x1 + 2, yA, z0 - 2), P(x1 + 2, yA, z1 + 2), P(x0 - 2, yA, z1 + 2)],
-          glass: [P(x0, yA, z0), P(x1, yA, z0), P(x1, yA, z1), P(x0, yA, z1)] }, lit);
-      }
+    const e1 = P(x0, y1, Hb), e2 = P(x1, y1, Hb), e3 = P(x1, y0, Hb);
+    c.beginPath(); c.moveTo(e1.x, e1.y); c.lineTo(e2.x, e2.y); c.lineTo(e3.x, e3.y); c.stroke();
+    // Окна этого дома, только те, что попадают в тайл
+    for (const w of windows) {
+      if (w.bi !== bi || w.box.x1 < r.x0 || w.box.x0 > r.x1 || w.box.y1 < r.y0 || w.box.y0 > r.y1) continue;
+      poly(w.frame, COLORS.windowFrame);
+      poly(w.glass, w.lit ? COLORS.windowLit : COLORS.window);
     }
-    // Окна фасада B вдоль y
-    for (let f = 0; f < 5; f++) {
-      for (let y = yA + 30; y < 980; y += 52) {
-        if (f === 0 && B0.doorsAlongY.some((d) => Math.abs(d - (y + 14)) < 34)) continue;
-        const z0 = 22 + f * F, z1 = z0 + 24, y0 = y, y1 = y + 28;
-        const lit = evening && rnd() < 0.5;
-        win({ frame: [P(xB, y0 - 2, z0 - 2), P(xB, y1 + 2, z0 - 2), P(xB, y1 + 2, z1 + 2), P(xB, y0 - 2, z1 + 2)],
-          glass: [P(xB, y0, z0), P(xB, y1, z0), P(xB, y1, z1), P(xB, y0, z1)] }, lit);
-      }
-    }
-    // Подъезды
-    for (const dx of doorsA) {
-      const home = dx === WORLD.door.x;
-      poly([P(dx - 16, yA, 0), P(dx + 16, yA, 0), P(dx + 16, yA, 40), P(dx - 16, yA, 40)], home ? COLORS.homeDoor : COLORS.door);
-      poly([P(dx - 12, yA, 4), P(dx - 1, yA, 4), P(dx - 1, yA, 36), P(dx - 12, yA, 36)], 'rgba(255,255,255,0.08)');
-      A.isoBox(c, P, dx - 24, yA, 48, 14, 44, 48, '#8c99a5', '#6f7b86', '#7d8a96');
-      A.isoBox(c, P, dx - 20, yA, 40, 12, 0, 4, '#c8c8c8', '#b0b0b0', '#bdbdbd');
-      if (home) {
-        const plate = P(dx, yA, 56);
+    const onY = b.face === 'y';
+    const at = (u, z) => (onY ? P(u, y1, z) : P(x1, u, z));
+    const box = (u0, du, d, z0, z1, top, left, right) => (onY ? A.isoBox(c, P, u0, y1, du, d, z0, z1, top, left, right) : A.isoBox(c, P, x1, u0, d, du, z0, z1, top, left, right));
+    for (const d of b.doors) {
+      if (d.shop) { paintShop(c, d.at, at, box, poly); continue; }
+      poly([at(d.at - 16, 0), at(d.at + 16, 0), at(d.at + 16, 40), at(d.at - 16, 40)], d.home ? COLORS.homeDoor : COLORS.door);
+      poly([at(d.at - 12, 4), at(d.at - 1, 4), at(d.at - 1, 36), at(d.at - 12, 36)], 'rgba(255,255,255,0.08)');
+      box(d.at - 24, 48, 14, 44, 48, '#8c99a5', '#6f7b86', '#7d8a96');
+      box(d.at - 20, 40, 12, 0, 4, '#c8c8c8', '#b0b0b0', '#bdbdbd');
+      if (d.home) {
+        const plate = at(d.at, 56);
         c.fillStyle = '#1c7ed6'; c.fillRect(plate.x - 7, plate.y - 5, 14, 10);
         c.fillStyle = '#fff'; c.font = 'bold 8px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('1', plate.x, plate.y + 0.5);
-        const lamp = P(dx + 22, yA, 40);
-        c.fillStyle = evening ? '#fff3bf' : '#e9ecef'; c.beginPath(); c.arc(lamp.x, lamp.y, 3, 0, Math.PI * 2); c.fill();
+        const lamp = at(d.at + 22, 40);
+        c.fillStyle = groundKey.endsWith('e') ? '#fff3bf' : '#e9ecef'; c.beginPath(); c.arc(lamp.x, lamp.y, 3, 0, Math.PI * 2); c.fill();
       }
     }
-    for (const dy of B0.doorsAlongY) {
-      poly([P(xB, dy - 16, 0), P(xB, dy + 16, 0), P(xB, dy + 16, 40), P(xB, dy - 16, 40)], COLORS.door);
-      A.isoBox(c, P, xB, dy - 24, 14, 48, 44, 48, '#8c99a5', '#6f7b86', '#7d8a96');
+  }
+
+  /** Магазин «Продукты»: витрина, дверь, козырёк и вывеска. */
+  function paintShop(c, u, at, box, poly) {
+    const evening = groundKey.endsWith('e');
+    poly([at(u - 92, 4), at(u + 92, 4), at(u + 92, 48), at(u - 92, 48)], '#2b4d3a');
+    for (const [a, b] of [[-88, -20], [20, 88]]) poly([at(u + a, 8), at(u + b, 8), at(u + b, 44), at(u + a, 44)], evening ? '#ffe3a3' : '#b7d6e6');
+    poly([at(u - 14, 4), at(u + 14, 4), at(u + 14, 44), at(u - 14, 44)], '#2f3b35');
+    poly([at(u - 10, 6), at(u + 10, 6), at(u + 10, 40), at(u - 10, 40)], evening ? '#ffd27f' : '#9fc4dc');
+    box(u - 98, 196, 18, 48, 53, '#3c9a5f', '#2f7a4a', '#358a54');
+    box(u - 80, 160, 3, 58, 80, '#2f9e44', '#237a34', '#2a8c3c');
+    const p = at(u, 69);
+    c.save();
+    c.translate(p.x, p.y + 1.5);
+    c.transform(1, 0.5, 0, 1, 0, 0);
+    c.fillStyle = '#ffffff'; c.font = '900 13px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('ПРОДУКТЫ', 0, 0);
+    c.restore();
+  }
+
+  /** Обзорная картинка всего района: подложка для неготовых тайлов и мини-карты. */
+  function paintOverview() {
+    ovSc = VISUAL.OVERVIEW_SCALE;
+    if (!overview) overview = document.createElement('canvas');
+    overview.width = Math.ceil(COLS * TILE * ovSc); overview.height = Math.ceil(ROWS * TILE * ovSc);
+    const c = overview.getContext('2d');
+    paintGround(c, { x0: BOUNDS.x0, y0: BOUNDS.y0, x1: BOUNDS.x0 + COLS * TILE, y1: BOUNDS.y0 + ROWS * TILE }, ovSc, true);
+    // Деревья точками, чтобы на карте был виден парк
+    c.setTransform(ovSc, 0, 0, ovSc, -BOUNDS.x0 * ovSc, -BOUNDS.y0 * ovSc);
+    for (const t of WORLD.trees) { const p = P(t.x, t.y, 50); c.fillStyle = A.TREES[t.type].leaves[0]; c.beginPath(); c.arc(p.x, p.y, 24, 0, Math.PI * 2); c.fill(); }
+    const mw = VISUAL.MINIMAP_W, mh = Math.round(mw * (BOUNDS.y1 - BOUNDS.y0) / (BOUNDS.x1 - BOUNDS.x0));
+    const k = Math.min(dpr, 2);
+    if (!minimapBase) minimapBase = document.createElement('canvas');
+    minimapBase.width = Math.round(mw * k); minimapBase.height = Math.round(mh * k);
+    minimapBase._w = mw; minimapBase._h = mh;
+    const m = minimapBase.getContext('2d');
+    m.drawImage(overview, 0, 0, (BOUNDS.x1 - BOUNDS.x0) * ovSc, (BOUNDS.y1 - BOUNDS.y0) * ovSc, 0, 0, minimapBase.width, minimapBase.height);
+  }
+
+  function prepareGround(s) {
+    const evening = !!(s && s.weather.evening);
+    const sc = Math.min(scale * Math.min(dpr, VISUAL.BG_DPR_MAX), 3);
+    const key = `${sc.toFixed(3)}@${dpr}|${evening ? 'e' : 'd'}`;
+    if (key === groundKey) return;
+    groundKey = key;
+    for (const t of tiles.values()) tilePool.push(t.cv);
+    tiles.clear();
+    buildWindows(evening);
+    paintOverview();
+  }
+
+  function renderTile(ix, iy) {
+    const sc = Math.min(scale * Math.min(dpr, VISUAL.BG_DPR_MAX), 3);
+    const px = Math.ceil(TILE * sc);
+    if (tiles.size >= VISUAL.TILE_CACHE) {
+      let oldKey = null, oldUsed = Infinity;
+      for (const [k, t] of tiles) if (t.used < oldUsed) { oldUsed = t.used; oldKey = k; }
+      tilePool.push(tiles.get(oldKey).cv); tiles.delete(oldKey);
+    }
+    const cv = tilePool.pop() || document.createElement('canvas');
+    cv.width = px; cv.height = px;
+    const c = cv.getContext('2d');
+    const r = { x0: BOUNDS.x0 + ix * TILE, y0: BOUNDS.y0 + iy * TILE };
+    r.x1 = r.x0 + TILE; r.y1 = r.y0 + TILE;
+    paintGround(c, r, px / TILE, false);
+    const t = { cv, used: frameNo };
+    tiles.set(ix * 1024 + iy, t);
+    return t;
+  }
+
+  function visibleTiles(pad = 0) {
+    const a = tileIndex(app.cam.x, app.cam.y), b = tileIndex(app.cam.x + viewW, app.cam.y + viewH);
+    return { ix0: Math.max(0, a.ix - pad), iy0: Math.max(0, a.iy - pad), ix1: Math.min(COLS - 1, b.ix + pad), iy1: Math.min(ROWS - 1, b.iy + pad) };
+  }
+  /** Рисует все тайлы в кадре сразу: на старте прогулки, чтобы не мелькала подложка. */
+  function warmTiles() {
+    const v = visibleTiles(0);
+    for (let iy = v.iy0; iy <= v.iy1; iy++) for (let ix = v.ix0; ix <= v.ix1; ix++) if (!tiles.has(ix * 1024 + iy)) renderTile(ix, iy);
+  }
+
+  function drawGround() {
+    frameNo++;
+    const v = visibleTiles(0), k = scale * dpr;
+    let budget = VISUAL.TILES_PER_FRAME;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (let iy = v.iy0; iy <= v.iy1; iy++) {
+      for (let ix = v.ix0; ix <= v.ix1; ix++) {
+        let t = tiles.get(ix * 1024 + iy);
+        if (!t && budget > 0) { t = renderTile(ix, iy); budget--; }
+        const sx = BOUNDS.x0 + ix * TILE, sy = BOUNDS.y0 + iy * TILE;
+        const dx0 = Math.round((sx - app.cam.x) * k), dy0 = Math.round((sy - app.cam.y) * k);
+        const dx1 = Math.round((sx + TILE - app.cam.x) * k), dy1 = Math.round((sy + TILE - app.cam.y) * k);
+        if (t) { t.used = frameNo; ctx.drawImage(t.cv, dx0, dy0, dx1 - dx0, dy1 - dy0); }
+        else if (overview) ctx.drawImage(overview, ix * TILE * ovSc, iy * TILE * ovSc, TILE * ovSc, TILE * ovSc, dx0, dy0, dx1 - dx0, dy1 - dy0);
+      }
+    }
+    // Свободный бюджет - на тайлы вокруг кадра, чтобы на бегу они были готовы
+    if (budget > 0) {
+      const w = visibleTiles(1);
+      outer: for (let iy = w.iy0; iy <= w.iy1; iy++) for (let ix = w.ix0; ix <= w.ix1; ix++) {
+        if (!tiles.has(ix * 1024 + iy)) { renderTile(ix, iy).used = frameNo - 1; if (--budget <= 0) break outer; }
+      }
     }
   }
 
   /* ============================== Камера и размеры ============================== */
+  // Отступы под вырез и полоску «домой» для мини-карты
+  const saProbe = document.createElement('div');
+  saProbe.style.cssText = 'position:fixed;left:0;bottom:0;width:env(safe-area-inset-left,0px);height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none';
+  document.body.appendChild(saProbe);
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, VISUAL.DPR_MAX);
     W = window.innerWidth; H = window.innerHeight;
@@ -349,8 +605,9 @@
     overlay.width = Math.ceil(W * VISUAL.NIGHT_RES); overlay.height = Math.ceil(H * VISUAL.NIGHT_RES);
     scale = Math.min(W / VISUAL.VIEW_WIDTH, H / 520);
     viewW = W / scale; viewH = H / scale;
-    bgKey = '';
-    paintBackground(app.walk || app.demo);
+    safe.left = saProbe.offsetWidth; safe.bottom = saProbe.offsetHeight;
+    prepareGround(app.walk || app.demo);
+    if (app.walk) warmTiles();
   }
   function cameraTarget(sx, sy) {
     let x = sx - viewW / 2, y = sy - viewH * 0.55;
@@ -416,6 +673,7 @@
     c.globalAlpha = 1;
   }
 
+  const KIOSK_VENDOR = { x: WORLD.kiosk.x + WORLD.kiosk.w / 2, y: WORLD.kiosk.y + WORLD.kiosk.h - 6, z: 52 };
   function say(owner, text, ttl = 1.8, color) {
     app.bubbles = app.bubbles.filter((b) => b.owner !== owner);
     app.bubbles.push({ owner, text, life: ttl, ttl, color });
@@ -424,8 +682,9 @@
     const s = app.walk || app.demo;
     if (!s) return 40;
     if (owner === s.louis) return 52;
-    if (owner === s.owner || owner === s.janitor) return 80;
-    if (owner === s.grandma) return 66;
+    if (owner === s.owner || s.janitors.includes(owner)) return 80;
+    if (s.sitters.includes(owner)) return 66;
+    if (owner === KIOSK_VENDOR) return 0;
     if (s.kids.includes(owner)) return 54;
     const pair = s.pairs.find((p) => p.owner === owner || p.dog === owner);
     if (pair) return owner === pair.owner ? 80 : (pair.dog.size === 'big' ? 50 : 32);
@@ -474,7 +733,8 @@
     'Шкалы вверху: пописать, покакать, побегать и порадоваться',
     'Остановись у дерева или столба - Луи понюхает и пометит',
     'Тянется к гадости? Жми «Фу»!',
-    'Злая собака? Беги к подъезду, туда она не пойдёт'
+    'Злая собака? Беги к подъезду, туда она не пойдёт',
+    'Район большой: внизу слева карта. Загляни в парк к пруду и на собачью площадку'
   ];
 
   /* ================================ Рендер мира ================================ */
@@ -503,12 +763,13 @@
       }
     } else if (s.kind === 'car') {
       const dark = shade(s.color, -0.25), mid = shade(s.color, -0.12);
+      const longY = s.h > s.w;
       A.isoBox(c, P, s.x, s.y, s.w, s.h, 6, 22, s.color, dark, mid);
-      A.isoBox(c, P, s.x + 8, s.y + 22, s.w - 16, s.h - 44, 22, 36, '#9fbfd6', '#6f8fa6', '#86a6bd');
-      for (const [wx, wy] of [[s.x + s.w, s.y + 18], [s.x + s.w, s.y + s.h - 18], [s.x + 12, s.y + s.h], [s.x + s.w - 12, s.y + s.h]]) {
-        const p = P(wx, wy, 6); c.fillStyle = '#1e1e1e'; c.beginPath(); c.ellipse(p.x, p.y, 6, 5, 0, 0, Math.PI * 2); c.fill();
-      }
-      const hl = P(s.x + s.w, s.y + s.h - 4, 16);
+      if (longY) A.isoBox(c, P, s.x + 6, s.y + 24, s.w - 12, s.h - 46, 22, 36, '#9fbfd6', '#6f8fa6', '#86a6bd');
+      else A.isoBox(c, P, s.x + 24, s.y + 6, s.w - 46, s.h - 12, 22, 36, '#9fbfd6', '#6f8fa6', '#86a6bd');
+      const wheels = longY ? [[s.x + s.w, s.y + 18], [s.x + s.w, s.y + s.h - 18]] : [[s.x + 18, s.y + s.h], [s.x + s.w - 18, s.y + s.h]];
+      for (const [wx, wy] of wheels) { const p = P(wx, wy, 6); c.fillStyle = '#1e1e1e'; c.beginPath(); c.ellipse(p.x, p.y, 6, 5, 0, 0, Math.PI * 2); c.fill(); }
+      const hl = longY ? P(s.x + s.w - 4, s.y + s.h, 16) : P(s.x + s.w, s.y + s.h - 6, 16);
       c.fillStyle = night ? '#fff3bf' : '#f1f1f1'; c.fillRect(hl.x - 2, hl.y - 1.5, 4, 3);
     } else if (s.kind === 'swings') {
       A.isoBox(c, P, s.x, s.y, 4, s.h, 0, 46, '#2d5f9a', '#234b7a', '#2a578c');
@@ -521,13 +782,92 @@
       }
     } else if (s.kind === 'slide') {
       A.isoBox(c, P, s.x, s.y, s.w, 14, 0, 34, '#95a5a6', '#7f8c8d', '#879596');
-      c.fillStyle = '#e74c3c';
-      const q = [P(s.x, s.y + 14, 34), P(s.x + s.w, s.y + 14, 34), P(s.x + s.w, s.y + s.h, 3), P(s.x, s.y + s.h, 3)];
-      c.beginPath(); q.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.closePath(); c.fill();
-      c.fillStyle = '#c0392b';
-      const side = [P(s.x + s.w, s.y + 14, 34), P(s.x + s.w, s.y + s.h, 3), P(s.x + s.w, s.y + s.h, 0), P(s.x + s.w, s.y + 14, 30)];
-      c.beginPath(); side.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.closePath(); c.fill();
+      poly(c, [P(s.x, s.y + 14, 34), P(s.x + s.w, s.y + 14, 34), P(s.x + s.w, s.y + s.h, 3), P(s.x, s.y + s.h, 3)], '#e74c3c');
+      poly(c, [P(s.x + s.w, s.y + 14, 34), P(s.x + s.w, s.y + s.h, 3), P(s.x + s.w, s.y + s.h, 0), P(s.x + s.w, s.y + 14, 30)], '#c0392b');
+    } else if (s.kind === 'kiosk') {
+      // Ларёк с шаурмой: окошко с продавцом смотрит на дорожку
+      A.isoBox(c, P, s.x, s.y, s.w, s.h, 0, 58, '#f1f3f5', '#d0d7de', '#e3e8ed');
+      A.isoBox(c, P, s.x - 5, s.y - 5, s.w + 10, s.h + 10, 58, 64, '#d9480f', '#b23a0b', '#c4410d');
+      const y = s.y + s.h, lit = night ? '#ffd27f' : '#b7d6e6';
+      poly(c, [P(s.x + 14, y, 22), P(s.x + s.w - 14, y, 22), P(s.x + s.w - 14, y, 46), P(s.x + 14, y, 46)], lit);
+      const head = P(s.x + s.w / 2, y - 6, 36);
+      c.fillStyle = '#e8b996'; c.beginPath(); c.arc(head.x, head.y, 4.5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#fff'; c.fillRect(head.x - 4.5, head.y - 7, 9, 3.5);
+      c.fillStyle = '#495057'; c.fillRect(head.x - 6, head.y + 4, 12, 6);
+      A.isoBox(c, P, s.x + 10, y, s.w - 20, 8, 20, 22, '#adb5bd', '#868e96', '#97a0a8');
+      A.isoBox(c, P, s.x + 8, y - 4, s.w - 16, 3, 66, 82, '#ffd43b', '#e8b923', '#f2c52a');
+      const p = P(s.x + s.w / 2, y - 3, 74);
+      c.save(); c.translate(p.x, p.y + 1); c.transform(1, 0.5, 0, 1, 0, 0);
+      c.fillStyle = '#c92a2a'; c.font = '900 9px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('ШАУРМА', 0, 0);
+      c.restore();
+    } else if (s.kind === 'garages') {
+      // Ряд гаражей, ворота смотрят на площадку перед ними
+      const colors = ['#5c7c5a', '#4f6d8f', '#8d5b3e', '#6b6f73', '#7b5e8a', '#4f7f7a'];
+      const n = Math.round(s.w / 80);
+      for (let i = 0; i < n; i++) {
+        const x = s.x + i * (s.w / n), w = s.w / n;
+        A.isoBox(c, P, x, s.y, w, s.h, 0, 44, '#a3a09a', '#8c8984', '#97948f');
+        A.isoBox(c, P, x - 1, s.y - 2, w + 2, s.h + 4, 44, 48, '#6d6a66', '#5a5753', '#64615d');
+        const col = colors[(i + Math.round(s.x / 80)) % colors.length], y = s.y + s.h;
+        poly(c, [P(x + 10, y, 2), P(x + w - 10, y, 2), P(x + w - 10, y, 36), P(x + 10, y, 36)], col);
+        c.strokeStyle = 'rgba(0,0,0,0.18)'; c.lineWidth = 0.8;
+        for (let k = x + 16; k < x + w - 12; k += 7) { const a = P(k, y, 3), b = P(k, y, 35); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
+        const lock = P(x + w / 2, y, 18); c.fillStyle = '#ced4da'; c.fillRect(lock.x - 1.5, lock.y - 1.5, 3, 3);
+      }
+    } else if (s.kind === 'gazebo') {
+      const x0 = s.x, y0 = s.y, x1 = s.x + s.w, y1 = s.y + s.h, cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+      A.isoBox(c, P, x0, y0, s.w, s.h, 0, 6, '#c4a27a', '#9c7c57', '#ad8c66');
+      const post = (x, y) => A.isoBox(c, P, x, y, 6, 6, 6, 58, '#f1e3cf', '#c8b79f', '#dccbb3');
+      post(x0 + 2, y0 + 2); post(x1 - 8, y0 + 2); post(x0 + 2, y1 - 8);
+      A.isoBox(c, P, x0 + 4, y1 - 3, s.w - 8, 3, 18, 22, '#e6d5bd', '#bfae96', '#d2c1a9');
+      A.isoBox(c, P, x1 - 3, y0 + 4, 3, s.h - 8, 18, 22, '#e6d5bd', '#bfae96', '#d2c1a9');
+      post(x1 - 8, y1 - 8);
+      const o = 10, apex = P(cx, cy, 92);
+      const c00 = P(x0 - o, y0 - o, 58), c10 = P(x1 + o, y0 - o, 58), c11 = P(x1 + o, y1 + o, 58), c01 = P(x0 - o, y1 + o, 58);
+      poly(c, [c00, c10, apex], '#7b3f2a'); poly(c, [c00, c01, apex], '#6f3826');
+      poly(c, [c10, c11, apex], '#9a5136'); poly(c, [c01, c11, apex], '#87472f');
+    } else if (s.kind === 'hoop') {
+      const north = s.y < WORLD.court.y + WORLD.court.h / 2, dir = north ? 1 : -1;
+      A.isoBox(c, P, s.x + 3, s.y + 3, 6, 6, 0, 66, '#868e96', '#5c636a', '#6c757d');
+      const by = north ? s.y + 10 : s.y - 2;
+      A.isoBox(c, P, s.x - 12, by, 36, 3, 56, 80, '#f8f9fa', '#ced4da', '#dee2e6');
+      const ring = P(s.x + 6, by + dir * 9, 62);
+      c.strokeStyle = '#f76707'; c.lineWidth = 1.6; c.beginPath(); c.ellipse(ring.x, ring.y, 7, 3.4, 0, 0, Math.PI * 2); c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 0.7;
+      for (let k = -5; k <= 5; k += 2.5) { c.beginPath(); c.moveTo(ring.x + k, ring.y + 1); c.lineTo(ring.x + k * 0.6, ring.y + 10); c.stroke(); }
+    } else if (s.kind === 'barrier') {
+      const alongX = s.w > s.h, len = alongX ? s.w : s.h;
+      const at = (u, z) => (alongX ? P(s.x + u, s.y + s.h / 2, z) : P(s.x + s.w / 2, s.y + u, z));
+      if (alongX) A.isoBox(c, P, s.x + 2, s.y + 4, 8, 8, 0, 30, '#495057', '#343a40', '#3d444b');
+      else A.isoBox(c, P, s.x + 4, s.y + 2, 8, 8, 0, 30, '#495057', '#343a40', '#3d444b');
+      c.lineWidth = 3.4; c.lineCap = 'butt';
+      for (let u = 8; u < len - 4; u += 14) {
+        const a = at(u, 24), b = at(Math.min(len - 4, u + 14), 24);
+        c.strokeStyle = Math.round(u / 14) % 2 ? '#f8f9fa' : '#e03131';
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      }
+      c.lineCap = 'round';
     }
+  }
+  function poly(c, pts, color) { c.fillStyle = color; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.closePath(); c.fill(); }
+  /** Кусок сетчатого забора собачьей площадки от (x0, y0) до (x1, y1). */
+  function drawFenceSeg(c, x0, y0, x1, y1, post) {
+    c.strokeStyle = COLORS.fence; c.lineWidth = 1.2;
+    for (const z of [6, 28]) { const a = P(x0, y0, z), b = P(x1, y1, z); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
+    c.strokeStyle = 'rgba(47,79,58,0.55)'; c.lineWidth = 0.7;
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / 6));
+    for (let i = 0; i <= n; i++) { const u = i / n, a = P(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, 0), b = P(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, 28); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
+    if (post) { const a = P(x0, y0, 0), b = P(x0, y0, 32); c.fillStyle = COLORS.fence; c.fillRect(a.x - 1.4, b.y, 2.8, a.y - b.y); }
+  }
+  function drawHurdle(c, h) {
+    const x = h.x + h.w / 2;
+    for (const y of [h.y, h.y + h.h]) { const a = P(x, y, 0), b = P(x, y, 22); c.fillStyle = '#495057'; c.fillRect(a.x - 1.2, b.y, 2.4, a.y - b.y); }
+    c.lineWidth = 3; c.lineCap = 'butt';
+    for (let u = 0; u < h.h; u += 14) {
+      const a = P(x, h.y + u, 16), b = P(x, h.y + Math.min(h.h, u + 14), 16);
+      c.strokeStyle = (u / 14) % 2 ? '#f8f9fa' : '#1c7ed6'; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    }
+    c.lineCap = 'round';
   }
   function shade(hex, k) {
     const n = parseInt(hex.slice(1), 16);
@@ -536,6 +876,26 @@
     r = f(r); g = f(g); b = f(b);
     return `rgb(${r},${g},${b})`;
   }
+
+  /** Длинные заборы и шлагбаумы режем на куски, чтобы герои верно заходили за них и перед ними. */
+  const SOLID_PARTS = (() => {
+    const parts = [];
+    for (const so of WORLD.solids) {
+      if (so.kind === 'building' || so.kind === 'barrier') continue;
+      if (so.kind === 'fence') {
+        const alongX = so.w > so.h, len = alongX ? so.w : so.h, n = Math.ceil(len / 30);
+        for (let i = 0; i < n; i++) {
+          const u0 = (len * i) / n, u1 = (len * (i + 1)) / n;
+          const box = alongX ? { x: so.x + u0, y: so.y, w: u1 - u0, h: so.h } : { x: so.x, y: so.y + u0, w: so.w, h: u1 - u0 };
+          const cx = alongX ? null : so.x + so.w / 2, cy = alongX ? so.y + so.h / 2 : null;
+          box.draw = (c) => (alongX ? drawFenceSeg(c, so.x + u0, cy, so.x + u1, cy, true) : drawFenceSeg(c, cx, so.y + u0, cx, so.y + u1, true));
+          parts.push(box);
+        }
+      } else parts.push({ x: so.x, y: so.y, w: so.w, h: so.h, solid: so });
+    }
+    for (const p of parts) p.key = depth(p.x + p.w / 2, p.y + p.h / 2);
+    return parts;
+  })();
 
   function render() {
     const s = app.walk || app.demo;
@@ -546,33 +906,23 @@
     if (!s) return;
     const night = s.weather.evening;
 
-    // Фон
-    if (bg) {
-      let sx = app.cam.x - BOUNDS.x0, sy = app.cam.y - BOUNDS.y0, sw = viewW, sh = viewH, dx = 0, dy = 0;
-      if (sx < 0) { dx = -sx; sw += sx; sx = 0; }
-      if (sy < 0) { dy = -sy; sh += sy; sy = 0; }
-      sw = Math.min(sw, bg.width / bgScale - sx); sh = Math.min(sh, bg.height / bgScale - sy);
-      if (sw > 0 && sh > 0) ctx.drawImage(bg, sx * bgScale, sy * bgScale, sw * bgScale, sh * bgScale, dx * scale, dy * scale, sw * scale, sh * scale);
-    }
+    drawGround();
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, -app.cam.x * dpr * scale, -app.cam.y * dpr * scale);
     const vx0 = app.cam.x - 80, vx1 = app.cam.x + viewW + 80, vy0 = app.cam.y - 40, vy1 = app.cam.y + viewH + 160;
     const vis = (wx, wy) => { const p = P(wx, wy); return p.x > vx0 && p.x < vx1 && p.y > vy0 && p.y < vy1; };
     const L = s.louis, O = s.owner;
 
-    // Земля: лужи, следы меток, зона подъезда
-    if (s.weather.rain) {
-      for (const q of WORLD.puddles) {
-        if (!vis(q.x, q.y)) continue;
-        ctx.save();
-        ctx.setTransform(dpr * scale * ISO.X, dpr * scale * ISO.Y, -dpr * scale * ISO.X, dpr * scale * ISO.Y, -app.cam.x * dpr * scale, -app.cam.y * dpr * scale);
-        ctx.fillStyle = 'rgba(80,100,125,0.6)';
-        ctx.beginPath(); ctx.ellipse(q.x, q.y, q.rx, q.ry, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(220,235,255,0.35)'; ctx.lineWidth = 1.2;
-        const k = (t * 0.8 + q.x) % 1;
-        ctx.beginPath(); ctx.ellipse(q.x + (q.rx * 0.3), q.y, q.rx * 0.6 * k, q.ry * 0.6 * k, 0, 0, Math.PI * 2); ctx.stroke();
-        ctx.restore();
+    // Вода в пруду блестит
+    for (const pd of WORLD.ponds) {
+      if (!vis(pd.x, pd.y - pd.ry) && !vis(pd.x, pd.y + pd.ry) && !vis(pd.x - pd.rx, pd.y) && !vis(pd.x + pd.rx, pd.y)) continue;
+      for (let i = 0; i < 7; i++) {
+        const a = i * 0.9 + Math.sin(t * 0.4 + i) * 0.2, d = 0.25 + (i % 3) * 0.2;
+        const p = P(pd.x + Math.cos(a) * pd.rx * d, pd.y + Math.sin(a) * pd.ry * d);
+        ctx.strokeStyle = `rgba(255,255,255,${0.18 + 0.12 * Math.sin(t * 2 + i)})`; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(p.x - 7, p.y); ctx.lineTo(p.x + 7, p.y); ctx.stroke();
       }
     }
+    // Следы меток и зона подъезда
     for (const m of s.marks) {
       if (!m.marked || !vis(m.x, m.y)) continue;
       const p = P(m.x, m.y);
@@ -597,94 +947,122 @@
     }
     if (app.walk && L.sniff > 0) drawScentTrails(s, t);
 
-    // Объекты по глубине
+    // Объекты по глубине. Герои рядом с коробками (машины, гаражи, ларёк) встают перед ними или за ними
     const list = [];
     const push = (x, y, f, bias = 0) => list.push({ d: depth(x, y) + bias, f });
-    WORLD.trees.forEach((tr, i) => { if (vis(tr.x, tr.y)) push(tr.x, tr.y, () => { const p = P(tr.x, tr.y); ctx.save(); ctx.translate(p.x, p.y); A.tree(ctx, tr.type, { t, seed: 50 + i, wind: s.weather.wind }); ctx.restore(); }); });
+    const boxes = [];
+    for (const part of SOLID_PARTS) {
+      if (!vis(part.x + part.w / 2, part.y + part.h / 2) && !vis(part.x, part.y + part.h) && !vis(part.x + part.w, part.y)) continue;
+      boxes.push(part);
+      list.push({ d: part.key, f: part.draw ? () => part.draw(ctx) : () => drawSolid(ctx, part.solid, night) });
+    }
+    const keyFor = (x, y, base) => {
+      let k = base;
+      for (const b of boxes) {
+        if (x < b.x - 60 || x > b.x + b.w + 60 || y < b.y - 60 || y > b.y + b.h + 60) continue;
+        if (x >= b.x + b.w || y >= b.y + b.h) k = Math.max(k, b.key + 0.5);
+        else if (x <= b.x || y <= b.y) k = Math.min(k, b.key - 0.5);
+      }
+      return k;
+    };
+    const pushE = (e, f, bias = 0) => list.push({ d: keyFor(e.x, e.y, depth(e.x, e.y) + bias), f });
+    const at = (x, y, z, f) => { const p = P(x, y, z); ctx.save(); ctx.translate(p.x, p.y); f(p); ctx.restore(); };
+
+    WORLD.trees.forEach((tr, i) => { if (vis(tr.x, tr.y)) push(tr.x, tr.y, () => at(tr.x, tr.y, 0, () => A.tree(ctx, tr.type, { t, seed: 50 + i, wind: s.weather.wind }))); });
     WORLD.bushes.forEach((b, i) => {
       if (!vis(b.x, b.y)) return;
       const inside = G.dist(L.x, L.y, b.x, b.y) < b.r + 8;
-      push(b.x, b.y + b.r * 0.4, () => { const p = P(b.x, b.y); ctx.save(); ctx.translate(p.x, p.y); A.bush(ctx, b.r, 200 + i, inside ? 0.6 : 1); ctx.restore(); });
+      push(b.x, b.y + b.r * 0.4, () => at(b.x, b.y, 0, () => A.bush(ctx, b.r, 200 + i, inside ? 0.6 : 1)));
     });
-    WORLD.lamps.forEach((l) => { if (vis(l.x, l.y)) push(l.x, l.y, () => { const p = P(l.x, l.y); ctx.save(); ctx.translate(p.x, p.y); A.lamp(ctx, true, night); ctx.restore(); }); });
-    WORLD.pumpkins.forEach((pk) => push(pk.x, pk.y, () => { const p = P(pk.x, pk.y); ctx.save(); ctx.translate(p.x, p.y); A.pumpkin(ctx, pk.r); ctx.restore(); }));
-    WORLD.solids.forEach((so) => { if (so.kind !== 'building' && vis(so.x + so.w / 2, so.y + so.h / 2)) push(so.x + so.w / 2, so.y + so.h / 2, () => drawSolid(ctx, so, night)); });
-    s.piles.forEach((pl, i) => { if (vis(pl.x, pl.y)) push(pl.x, pl.y, () => { const p = P(pl.x, pl.y); ctx.save(); ctx.translate(p.x, p.y); A.leafPile(ctx, pl.size, 400 + i); ctx.restore(); }, -6); });
-    s.poops.forEach((pp) => push(pp.x, pp.y, () => { const p = P(pp.x, pp.y); ctx.save(); ctx.translate(p.x, p.y); A.poopPile(ctx); ctx.restore(); }, -4));
+    WORLD.lamps.forEach((l) => { if (vis(l.x, l.y)) push(l.x, l.y, () => at(l.x, l.y, 0, () => A.lamp(ctx, true, night))); });
+    WORLD.pumpkins.forEach((pk) => { if (vis(pk.x, pk.y)) push(pk.x, pk.y, () => at(pk.x, pk.y, 0, () => A.pumpkin(ctx, pk.r))); });
+    const fo = WORLD.fountain;
+    if (vis(fo.x, fo.y)) push(fo.x, fo.y, () => at(fo.x, fo.y, 0, () => A.fountain(ctx, fo.r, t, night)));
+    WORLD.hurdles.forEach((h) => { if (vis(h.x, h.y + h.h / 2)) push(h.x + h.w / 2, h.y + h.h / 2, () => drawHurdle(ctx, h)); });
+    s.piles.forEach((pl, i) => { if (vis(pl.x, pl.y)) push(pl.x, pl.y, () => at(pl.x, pl.y, 0, () => A.leafPile(ctx, pl.size, 400 + i, t)), -8); });
+    s.poops.forEach((pp) => push(pp.x, pp.y, () => at(pp.x, pp.y, 0, () => A.poopPile(ctx)), -4));
     s.items.forEach((it) => {
       if (it.state === 'carried' || (!it.revealed && it.group === 'treat')) return;
       if (!vis(it.x, it.y)) return;
-      push(it.x, it.y, () => {
+      pushE(it, () => {
         const p = P(it.x, it.y);
-        ctx.save(); ctx.translate(p.x, p.y); A.item(ctx, it.kind, t, it.id, it.z); ctx.restore();
+        at(it.x, it.y, 0, () => A.item(ctx, it.kind, t, it.id, it.z));
         if (it.group === 'bad' && L.tempt === it) { ctx.fillStyle = 'rgba(231,76,60,0.9)'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('!', p.x, p.y - 14 - Math.abs(Math.sin(t * 8)) * 3); }
       }, -3);
     });
+    if (s.court) {
+      const b = s.court.ball;
+      if (vis(b.x, b.y)) pushE(b, () => at(b.x, b.y, 0, () => A.football(ctx, Math.abs(Math.sin((b.x + b.y) * 0.05)) * Math.min(6, Math.hypot(b.vx, b.vy) / 30), (b.x - b.y) * 0.08)));
+    }
     s.flocks.forEach((f) => {
+      const fly = f.state === 'fly';
+      const k = fly ? Math.min(1, f.t / CFG.PIGEON_FLY_TIME) : 0;
+      // Взлетают сразу: высота быстро растёт, и стая разлетается в стороны
+      const up = fly ? Math.pow(Math.sin(k * Math.PI), 0.6) : 0;
       f.birds.forEach((b, i) => {
-        const fly = f.state === 'fly';
-        const k = fly ? Math.min(1, f.t / CFG.PIGEON_FLY_TIME) : 0;
-        const z = fly ? Math.sin(k * Math.PI) * 90 + (k < 0.5 ? 0 : 0) : 0;
-        const bx = f.x + b.ox, by = f.y + b.oy;
+        const bx = f.x + b.ox + b.dx * 40 * up, by = f.y + b.oy + b.dy * 40 * up;
         if (!vis(bx, by)) return;
-        push(bx, by, () => { const p = P(bx, by); ctx.save(); ctx.translate(p.x, p.y); A.pigeon(ctx, { flying: fly, z, t, ph: b.ph, facing: fly ? (f.to.x - f.to.y > f.from.x - f.from.y ? 1 : -1) : (i % 2 ? 1 : -1) }); ctx.restore(); });
+        push(bx, by, () => at(bx, by, 0, () => A.pigeon(ctx, { flying: fly, z: up * (90 + i * 6), t, ph: b.ph, facing: fly ? (f.to.x - f.to.y > f.from.x - f.from.y ? 1 : -1) : (i % 2 ? 1 : -1) })), fly ? 200 : 0);
       });
+    });
+    s.ducks.forEach((dk, i) => {
+      if (!vis(dk.x, dk.y)) return;
+      push(dk.x, dk.y, () => at(dk.x, dk.y, 0, () => A.duck(ctx, { t, ph: dk.ph, facing: dk.facing, drake: i % 2 === 0, fast: s.duckCd > CFG.DUCK_COOLDOWN - 2 })));
     });
     s.cats.forEach((cat) => {
       if (!vis(cat.x, cat.y)) return;
-      push(cat.x, cat.y, () => { const p = P(cat.x, cat.y); ctx.save(); ctx.translate(p.x, p.y); A.cat(ctx, cat.color, { facing: cat.facing, pose: cat.state === 'sit' || cat.state === 'perch' ? 'sit' : 'run', t, phase: cat.phase, z: cat.z }); ctx.restore(); }, cat.state === 'perch' || cat.z > 10 ? 120 : 0);
+      const perched = cat.state === 'perch' || cat.z > 10;
+      const f = () => at(cat.x, cat.y, 0, () => A.cat(ctx, cat.color, { facing: cat.facing, pose: cat.state === 'sit' || cat.state === 'perch' ? 'sit' : 'run', t, phase: cat.phase, z: cat.z }));
+      if (perched) push(cat.x, cat.y, f, 120); else pushE(cat, f);
     });
-    if (s.grandma) {
-      const gm = s.grandma;
-      push(gm.x, gm.y, () => { const p = P(gm.x, gm.y); ctx.save(); ctx.translate(p.x, p.y); A.person(ctx, 'grandma', { facing: 1, phase: 0, moving: 0, t, pose: 'sit' }); ctx.restore(); }, 2);
-    }
-    s.kids.forEach((k) => { if (vis(k.x, k.y)) push(k.x, k.y, () => { const p = P(k.x, k.y); ctx.save(); ctx.translate(p.x, p.y); A.person(ctx, k.look, { facing: k.facing, phase: k.phase, moving: Math.min(1, k.speed / 40), t, pose: k.speed > 5 ? 'walk' : 'stand' }); ctx.restore(); }); });
-    if (s.janitor) {
-      const J = s.janitor;
-      if (vis(J.x, J.y)) push(J.x, J.y, () => { const p = P(J.x, J.y); ctx.save(); ctx.translate(p.x, p.y); A.person(ctx, 'janitor', { facing: J.facing, phase: J.phase, moving: Math.min(1, J.speed / 40), t, pose: J.sweeping ? 'sweep' : J.speed > 5 ? 'walk' : 'stand', holding: 'broom' }); ctx.restore(); });
-    }
+    s.sitters.forEach((st) => {
+      if (vis(st.x, st.y)) push(st.x, st.y, () => at(st.x, st.y, 0, () => A.person(ctx, st.look, { facing: 1, phase: 0, moving: 0, t, pose: 'sit' })), 2);
+    });
+    s.kids.forEach((k) => { if (vis(k.x, k.y)) pushE(k, () => at(k.x, k.y, 0, () => A.person(ctx, k.look, { facing: k.facing, phase: k.phase, moving: Math.min(1, k.speed / 40), t, pose: k.speed > 5 ? 'walk' : 'stand' }))); });
+    s.janitors.forEach((J) => {
+      if (vis(J.x, J.y)) pushE(J, () => at(J.x, J.y, 0, () => A.person(ctx, 'janitor', { facing: J.facing, phase: J.phase, moving: Math.min(1, J.speed / 40), t, pose: J.sweeping ? 'sweep' : J.speed > 5 ? 'walk' : 'stand', holding: 'broom' })));
+    });
     const leashes = [];
     s.pairs.forEach((pair) => {
       const o = pair.owner, d = pair.dog;
       const ref = { hand: null, collar: null };
-      if (vis(o.x, o.y) || vis(d.x, d.y)) {
-        push(o.x, o.y, () => { const p = P(o.x, o.y); ctx.save(); ctx.translate(p.x, p.y); const h = A.person(ctx, o.look, { facing: o.facing, phase: o.phase, moving: Math.min(1, o.speed / 40), t, pose: d.state === 'chase' ? 'call' : o.speed > 5 ? 'walk' : 'stand', holding: d.state === 'chase' || d.state === 'return' ? null : 'leash' }); ctx.restore(); ref.hand = { x: p.x + h.x, y: p.y + h.y }; });
-        push(d.x, d.y, () => {
-          const p = P(d.x, d.y); ctx.save(); ctx.translate(p.x, p.y);
-          const angry = d.character === 'angry' && (d.state === 'alert' || d.state === 'chase');
-          const col = A.dog(ctx, d.look, { facing: d.facing, phase: d.phase, moving: Math.min(1, d.speed / 60), t: t + d.r, wag: d.character === 'friendly', angry: angry || d.yap > 0, hackles: d.character === 'angry', sniff: d.state === 'greet' && d.progress > 0 });
-          ctx.restore();
-          ref.collar = { x: p.x + col.x, y: p.y + col.y };
-          if (angry) { ctx.fillStyle = '#e03131'; ctx.beginPath(); ctx.arc(p.x, p.y - 46 * (A.DOGS[d.look].scale), 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', p.x, p.y - 46 * A.DOGS[d.look].scale + 0.5); }
-        });
-        leashes.push({ ref, free: d.state === 'chase' || d.state === 'return', dog: d });
-      }
+      if (!vis(o.x, o.y) && !vis(d.x, d.y)) return;
+      const free = pair.offLeash || d.state === 'chase' || d.state === 'return';
+      pushE(o, () => at(o.x, o.y, 0, (p) => {
+        const h = A.person(ctx, o.look, { facing: o.facing, phase: o.phase, moving: Math.min(1, o.speed / 40), t, pose: d.state === 'chase' ? 'call' : o.speed > 5 ? 'walk' : 'stand', holding: free ? null : 'leash' });
+        ref.hand = { x: p.x + h.x, y: p.y + h.y };
+      }));
+      pushE(d, () => {
+        const p = P(d.x, d.y);
+        const angry = d.character === 'angry' && (d.state === 'alert' || d.state === 'chase');
+        let col = null;
+        at(d.x, d.y, 0, () => { col = A.dog(ctx, d.look, { facing: d.facing, phase: d.phase, moving: Math.min(1, d.speed / 60), t: t + d.r, wag: d.character === 'friendly', angry: angry || d.yap > 0, hackles: d.character === 'angry', sniff: d.state === 'greet' && d.progress > 0 }); });
+        ref.collar = { x: p.x + col.x, y: p.y + col.y };
+        if (angry) { const yy = p.y - 46 * A.DOGS[d.look].scale; ctx.fillStyle = '#e03131'; ctx.beginPath(); ctx.arc(p.x, yy, 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', p.x, yy + 0.5); }
+      });
+      if (!pair.offLeash) leashes.push({ ref, free, dog: d });
     });
     const louisRef = { ring: null, hand: null };
-    if (app.walk) push(O.x, O.y, () => {
-      const p = P(O.x, O.y); ctx.save(); ctx.translate(p.x, p.y);
+    if (app.walk) pushE(O, () => at(O.x, O.y, 0, (p) => {
       // Хозяин впереди Луи и заслоняет его - делаем полупрозрачным
       const lp = P(L.x, L.y);
       if (depth(O.x, O.y) > depth(L.x, L.y) && Math.abs(lp.x - p.x) < 26 && lp.y < p.y + 4 && lp.y > p.y - 70) ctx.globalAlpha = 0.55;
       const pickup = O.act && O.act.type === 'pickup' && O.act.t > 0;
       const h = A.person(ctx, O.look, { facing: O.facing, phase: O.phase, moving: Math.min(1, O.speed / 50), t: O.act && O.act.type === 'throw' ? 0.45 - O.act.t : t, pose: O.act && O.act.type === 'throw' ? 'throw' : pickup ? 'bend' : O.speed > 5 ? 'walk' : 'stand', holding: pickup ? 'bag' : 'leash' });
-      ctx.restore();
       louisRef.hand = { x: p.x + h.x, y: p.y + h.y };
-    });
-    if (app.walk) push(L.x, L.y, () => {
-      const p = P(L.x, L.y); ctx.save(); ctx.translate(p.x, p.y);
+    }));
+    if (app.walk) pushE(L, () => at(L.x, L.y, 0, (p) => {
       const ps = pose(L);
       let facing = L.facing;
       if (L.act && L.act.type === 'spin') facing = Math.sin(L.act.t * 12) > 0 ? 1 : -1;
       const expr = L.panic > 0 || L.fear > 0.5 ? 'scared' : s.meters.happy > 60 || L.running ? 'happy' : 'neutral';
-      const ring = A.louis(ctx, { facing, phase: L.phase, moving: L.act && L.act.type === 'spin' ? 1 : Math.min(1, L.speed / 80), t, pose: ps, expr, dirty: L.dirty, carry: L.carry ? L.carry.kind : null, jump: L.jump });
-      ctx.restore();
+      const ring = A.louis(ctx, { facing, phase: L.phase, moving: L.act && L.act.type === 'spin' ? 1 : Math.min(1, L.speed / 80), t, pose: ps, expr, carry: L.carry ? L.carry.kind : null, jump: L.jump });
       louisRef.ring = { x: p.x + ring.x, y: p.y + ring.y };
       if (L.act && L.act.type === 'pee' && Math.random() < 0.6) {
         const dir = L.facing;
         addParticle({ kind: 'drop', x: p.x - dir * 9, y: p.y - 9, vx: -dir * 40, vy: -10, life: 0.25, ttl: 0.25, size: 1.5, color: 'rgba(240,200,60,0.85)', rot: 0, floor: p.y });
       }
-    });
+    }));
     list.sort((a, b) => a.d - b.d);
     for (const e of list) e.f();
 
@@ -710,14 +1088,13 @@
       ctx.beginPath(); ctx.moveTo(louisRef.hand.x, louisRef.hand.y); ctx.quadraticCurveTo(m.x, m.y, louisRef.ring.x, louisRef.ring.y); ctx.stroke();
     }
 
-    drawFence(night);
+    drawFence(vis);
     drawProgressRings(s, t);
     drawParticles(ctx);
     drawBubbles(ctx);
     if (app.walk) drawThought(s, t);
 
     if (night) drawNight(s);
-    if (s.weather.rain) drawRain();
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (app.walk) {
@@ -727,29 +1104,67 @@
         ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       }
       if (s.allDone || L.panic > 0 || s.pairs.some((p) => p.dog.state === 'chase' || p.dog.state === 'alert')) drawDoorArrow(t, s.allDone);
+      drawMinimap(s);
       drawJoystick();
     }
   }
 
-  function drawFence(night) {
-    const posts = [];
-    for (let y = 40; y <= 1000; y += 60) posts.push({ x: 1000, y });
-    for (let x = 40; x < 1000; x += 60) posts.push({ x, y: 1000 });
-    const gateOK = (p) => !WORLD.gates.some((g) => G.dist(g.x, g.y, p.x, p.y) < 40);
+  /** Забор по ближним краям района, с калитками. */
+  function drawFence(vis) {
+    const gap = (edge, u) => WORLD.fenceGaps.some((g) => g.edge === edge && u > g.a && u < g.b);
     ctx.strokeStyle = COLORS.fence; ctx.lineWidth = 1.6;
-    const rail = (z) => {
-      ctx.beginPath();
-      let pen = false;
-      for (let y = 0; y <= 1000; y += 10) { const ok = gateOK({ x: 1000, y }); const p = P(1000, y, z); if (ok) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; } else pen = false; }
-      pen = false;
-      for (let x = 1000; x >= 0; x -= 10) { const ok = gateOK({ x, y: 1000 }); const p = P(x, 1000, z); if (ok) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; } else pen = false; }
-      ctx.stroke();
+    const side = (edge) => {
+      for (const z of [10, 22]) {
+        ctx.beginPath();
+        let pen = false;
+        for (let u = 0; u <= S; u += 10) {
+          const x = edge === 'x' ? S : u, y = edge === 'x' ? u : S;
+          if (gap(edge, u) || !vis(x, y)) { pen = false; continue; }
+          const p = P(x, y, z);
+          if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          pen = true;
+        }
+        ctx.stroke();
+      }
+      ctx.fillStyle = COLORS.fence;
+      for (let u = 40; u <= S; u += 60) {
+        const x = edge === 'x' ? S : u, y = edge === 'x' ? u : S;
+        if (gap(edge, u) || !vis(x, y)) continue;
+        const a = P(x, y, 0), b = P(x, y, 26); ctx.fillRect(a.x - 1.2, b.y, 2.4, a.y - b.y);
+      }
     };
-    rail(10); rail(22);
-    ctx.fillStyle = COLORS.fence;
-    for (const p of posts) { if (!gateOK(p)) continue; const a = P(p.x, p.y, 0), b = P(p.x, p.y, 26); ctx.fillRect(a.x - 1.2, b.y, 2.4, a.y - b.y); }
+    side('x'); side('y');
   }
 
+  /** Мини-карта района в углу: дом, Луи, собаки. */
+  function drawMinimap(s) {
+    if (!minimapBase) return;
+    const mw = minimapBase._w, mh = minimapBase._h;
+    const x0 = 12 + safe.left, y0 = H - mh - 16 - safe.bottom;
+    const k = mw / (BOUNDS.x1 - BOUNDS.x0);
+    const toMap = (wx, wy) => { const p = P(wx, wy); return { x: x0 + (p.x - BOUNDS.x0) * k, y: y0 + (p.y - BOUNDS.y0) * k }; };
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = 'rgba(255,248,235,0.85)'; A.rr(ctx, x0 - 4, y0 - 4, mw + 8, mh + 8, 10); ctx.fill();
+    ctx.save(); A.rr(ctx, x0, y0, mw, mh, 7); ctx.clip();
+    ctx.drawImage(minimapBase, x0, y0, mw, mh);
+    // Рамка того, что видно на экране
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + (app.cam.x - BOUNDS.x0) * k, y0 + (app.cam.y - BOUNDS.y0) * k, viewW * k, viewH * k);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    const dot = (p, r, color, ring) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = 1.2; ctx.stroke(); } };
+    const home = toMap(WORLD.door.x, WORLD.door.y + 10);
+    ctx.fillStyle = COLORS.homeDoor; ctx.beginPath(); ctx.moveTo(home.x - 5, home.y + 1); ctx.lineTo(home.x, home.y - 5); ctx.lineTo(home.x + 5, home.y + 1); ctx.lineTo(home.x + 3.5, home.y + 1); ctx.lineTo(home.x + 3.5, home.y + 5); ctx.lineTo(home.x - 3.5, home.y + 5); ctx.lineTo(home.x - 3.5, home.y + 1); ctx.closePath(); ctx.fill();
+    for (const pair of s.pairs) {
+      const d = pair.dog;
+      const color = d.character === 'angry' ? '#e03131' : d.character === 'grumpy' ? '#f59f00' : d.friend ? '#adb5bd' : '#2f9e44';
+      dot(toMap(d.x, d.y), 2.4, color, '#fff');
+    }
+    const L = s.louis, lp = toMap(L.x, L.y);
+    dot(lp, 3.6 + Math.sin(app.time * 6) * 0.6, '#d9480f', '#fff');
+    ctx.restore();
+  }
   function drawProgressRings(s, t) {
     const L = s.louis;
     const ring = (wx, wy, z, k, color) => {
@@ -769,7 +1184,7 @@
       if (d.state === 'greet' && d.progress > 0) ring((d.x + L.x) / 2, (d.y + L.y) / 2, 50, d.progress / CFG.FRIEND_SNIFF_TIME, '#ff6b81');
     }
     const pet = (p, spot) => { if (p && p.progress > 0 && p.cd <= 0) ring(spot.x, spot.y, 60, p.progress / CFG.PET_TIME, '#ff6b81'); };
-    pet(s.grandma, WORLD.grandmaSpot);
+    s.sitters.forEach((st) => pet(st, st.spot));
     s.kids.forEach((k) => pet(k, k));
     // Запах на интересных местах
     for (const m of s.marks) {
@@ -833,7 +1248,9 @@
     for (const w of litWindows) light(w.x, w.y, 26, 0.9);
     const lp = P(L.x, L.y, 14); light(lp.x, lp.y, 80, 0.8);
     for (const tr of WORLD.trees) { const p = P(tr.x, tr.y, 60); light(p.x, p.y, 70, 0.55); }
-    // Цветная подсветка деревьев, как в парке на фото, и тёплые фонари
+    const kp = P(WORLD.kiosk.x + WORLD.kiosk.w / 2, WORLD.kiosk.y + WORLD.kiosk.h + 20, 20); light(kp.x, kp.y, 120);
+    const fp = P(WORLD.fountain.x, WORLD.fountain.y, 20); light(fp.x, fp.y, 90, 0.7);
+    // Цветная подсветка деревьев в парке, как на фото, и тёплые фонари
     o.globalCompositeOperation = 'source-over';
     const tint = (sx, sy, r, color) => {
       const x = (sx - app.cam.x) * k, y = (sy - app.cam.y) * k, R = r * k;
@@ -842,30 +1259,16 @@
       g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
       o.fillStyle = g; o.fillRect(x - R, y - R, R * 2, R * 2);
     };
-    WORLD.trees.forEach((tr, i) => { const p = P(tr.x, tr.y, 65); tint(p.x, p.y, 75, i % 2 ? 'rgba(70,130,255,0.32)' : 'rgba(40,220,170,0.28)'); });
+    WORLD.trees.forEach((tr, i) => {
+      if (tr.x < 1440 || tr.y < 1440) return;
+      const p = P(tr.x, tr.y, 65); tint(p.x, p.y, 75, i % 3 === 0 ? 'rgba(255,90,170,0.26)' : i % 2 ? 'rgba(70,130,255,0.32)' : 'rgba(40,220,170,0.28)');
+    });
+    tint(kp.x, kp.y, 90, 'rgba(255,170,80,0.25)');
     for (const l of WORLD.lamps) { const p = P(l.x, l.y, 40); tint(p.x, p.y, 90, 'rgba(255,190,110,0.2)'); }
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(overlay, 0, 0, overlay.width, overlay.height, 0, 0, overlay.width / VISUAL.NIGHT_RES, overlay.height / VISUAL.NIGHT_RES);
     ctx.restore();
-  }
-
-  function drawRain() {
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = 'rgba(40,55,75,0.16)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(210,225,245,0.45)'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const d of app.drops) { ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - 3, d.y + 11); }
-    ctx.stroke();
-    ctx.restore();
-  }
-  function updateRain(dt) {
-    const s = app.walk || app.demo;
-    if (!s || !s.weather.rain) { app.drops.length = 0; return; }
-    while (app.drops.length < 110) app.drops.push({ x: Math.random() * (W + 40), y: Math.random() * H, v: 420 + Math.random() * 200 });
-    for (const d of app.drops) { d.y += d.v * dt; d.x -= d.v * 0.25 * dt; if (d.y > H) { d.y = -12; d.x = Math.random() * (W + 40); } }
   }
 
   function drawDoorArrow(t, good) {
@@ -976,7 +1379,7 @@
     });
   }
   function makeDemo() {
-    app.demo = G.createWalk(Math.random, { rain: false, evening: false, wind: true });
+    app.demo = G.createWalk(Math.random, { evening: false, wind: true });
     // В меню двор живёт сам: Луи с хозяином ещё дома
     app.demo.louis.x = app.demo.owner.x = 30;
     app.demo.louis.y = app.demo.owner.y = 30;
@@ -987,17 +1390,14 @@
     makeDemo();
     app.particles.length = 0; app.bubbles.length = 0;
     joy.id = null;
-    startRain(false);
     show(ui.hud, false); show(ui.sniff, false); show(ui.fu, false);
     show(ui.pauseScreen, false); show(ui.result, false);
     renderMenu();
     show(ui.menu, true);
-    paintBackground(app.demo);
+    prepareGround(app.demo);
   }
   function weatherText(w) {
-    const parts = [w.evening ? 'вечер' : 'день'];
-    if (w.rain) parts.push('дождь'); else if (w.wind) parts.push('ветрено'); else parts.push('ясно');
-    return parts.join(', ');
+    return (w.evening ? 'вечер' : 'день') + ', ' + (w.wind ? 'ветрено' : 'ясно');
   }
   function startWalk(opts) {
     app.walk = G.createWalk(Math.random, opts);
@@ -1006,14 +1406,14 @@
     app.particles.length = 0; app.bubbles.length = 0; app.rings.length = 0;
     app.heartbeat = 0; app.wishT = 4; app.wishShow = 0; app.tutorialStep = 0; app.tutorialTimer = 0.8;
     joy.id = null;
-    paintBackground(app.walk);
+    prepareGround(app.walk);
     show(ui.menu, false); show(ui.result, false); show(ui.pauseScreen, false);
     show(ui.hud, true); show(ui.sniff, true); show(ui.fu, false);
     updateCamera(0, app.walk.louis, true);
+    warmTiles();
     say(app.walk.louis, 'Гулять!', 1.8);
     say(app.walk.owner, 'Пошли, Луи!', 2);
     sfx.bark(false);
-    startRain(app.walk.weather.rain);
     toast(`Сегодня: ${weatherText(app.walk.weather)}. Три минуты на прогулку`, '', 2.8);
   }
   function pauseGame() {
@@ -1033,7 +1433,6 @@
     app.lastResult = result;
     joy.id = null;
     show(ui.sniff, false); show(ui.fu, false);
-    startRain(false);
     const s = app.walk;
     if (result.reason === 'done') { say(s.louis, 'Домой!', 2); burst(s.louis.x, s.louis.y, 30, 'heart', 10, ['#ff6b81', '#ff8fa3']); sfx.done(); }
     else if (result.reason === 'timeout') { say(s.owner, 'Всё, пора домой!', 2); result.count < 4 ? sfx.sad() : sfx.done(); }
@@ -1062,7 +1461,6 @@
       line(r.done.energy, 'Набегался', 'Не набегался: сгрыз тапки'),
       line(r.done.happy, 'Счастлив', 'Не нарадовался: грустит в кресле')
     ];
-    if (r.dirty) rows.push('<li class="bad"><span>🛁</span><span>Лазил по лужам: мыть лапы</span></li>');
     if (r.friends.length) rows.push(`<li class="ok"><span>🐾</span><span>Друзья: ${r.friends.join(', ')}</span></li>`);
     if (r.newFriends && r.newFriends.length) rows.push(`<li class="ok"><span>★</span><span>Новые в альбоме: ${r.newFriends.join(', ')}</span></li>`);
     if (r.timeBonus) rows.push(`<li class="ok"><span>⏱</span><span>Вернулись раньше: +${r.timeBonus}</span></li>`);
@@ -1117,12 +1515,20 @@
         case 'abort': say(L, 'Передумал', 1.2); break;
         case 'cleaned': burst(ev.x, ev.y, 6, 'star', 6, ['#69db7c', '#ffffff'], 40); break;
         case 'pile': sfx.leaves(); burst(ev.x, ev.y, 6, 'leaf', 26, A.LEAF_COLORS, 120); say(L, 'Ура-а!', 1); break;
-        case 'scold': if (s.janitor) say(s.janitor, 'Ах ты, хулиган!', 1.8); toast('Дворник ругается: опять разбросали кучу', '', 1.8); break;
+        case 'scold': if (s.janitors[ev.janitor]) say(s.janitors[ev.janitor], 'Ах ты, хулиган!', 1.8); toast('Дворник ругается: опять разбросали кучу', '', 1.8); break;
         case 'wind': sfx.wind(); for (let i = 0; i < 36; i++) addParticle({ kind: 'wind', x: app.cam.x - 20 - Math.random() * 60, y: app.cam.y + Math.random() * viewH, vx: 180 + Math.random() * 120, vy: 0, life: 3, ttl: 3, size: 2.4 + Math.random() * 1.6, color: A.LEAF_COLORS[i % A.LEAF_COLORS.length], rot: Math.random() * 6, floor: 1e9 }); toast('Подул ветер и разметал кучи листьев', '', 1.6); break;
-        case 'puddle': sfx.splash(); burst(ev.x, ev.y, 2, 'crumb', 10, ['#b0c4de', '#dbe7f5'], 60); if (ev.first) say(O, 'Ну вот, лапы мыть...', 1.8); break;
         case 'pigeons': sfx.flutter(); if (ev.chased) say(L, 'Гав!', 0.9); break;
         case 'cat': sfx.meow(); if (ev.chased) { sfx.bark(false); say(L, 'Кот!', 0.9); } break;
-        case 'grandma': sfx.chomp(); if (s.grandma) say(s.grandma, 'Ути, какой кудрявый!', 2); burst(s.grandma.x, s.grandma.y, 30, 'heart', 6, ['#ff6b81']); break;
+        case 'grandma': case 'sitter': {
+          const st = s.sitters.find((x) => x.id === ev.id);
+          if (ev.type === 'grandma') sfx.chomp(); else sfx.friend();
+          if (st) { say(st, ev.type === 'grandma' ? 'Ути, какой кудрявый! Держи' : 'Ах ты мой хороший', 2); burst(st.x, st.y, 30, 'heart', 6, ['#ff6b81']); }
+          break;
+        }
+        case 'kiosk': sfx.ding(); say(KIOSK_VENDOR, 'Держи, кудрявый!', 2); break;
+        case 'ducks': sfx.quack(); if (ev.chased) { sfx.splash(); say(L, 'Гав-гав!', 0.9); } break;
+        case 'courtBall': { sfx.kick(); burst(ev.x, ev.y, 6, 'star', 6, ['#ffd43b', '#ffffff'], 50); const kid = s.kids.find((k) => k.court); if (kid) say(kid, 'Пас, пёсик!', 1.4); break; }
+        case 'hurdle': sfx.hop(); say(L, 'Хоп!', 0.8); break;
         case 'kid': { const kid = s.kids.find((k) => k.id === ev.id); if (kid) say(kid, 'Собачка!', 1.6); burst(L.x, L.y, 26, 'heart', 6, ['#ff6b81', '#ffc9d4']); sfx.friend(); break; }
         case 'pairEnter': break;
         case 'invite': if (pair) say(pair.owner, 'Можно познакомиться!', 2.2); break;
@@ -1167,9 +1573,11 @@
     if (app.leafT > 0) return;
     app.leafT = 0.35;
     const s = app.walk || app.demo; if (!s) return;
-    const tr = WORLD.trees[Math.floor(Math.random() * WORLD.trees.length)];
+    // Листья падают с деревьев, что сейчас в кадре
+    const inView = WORLD.trees.filter((tr) => { const p = P(tr.x, tr.y, 80); return p.x > app.cam.x - 60 && p.x < app.cam.x + viewW + 60 && p.y > app.cam.y - 100 && p.y < app.cam.y + viewH + 60; });
+    if (!inView.length) return;
+    const tr = inView[Math.floor(Math.random() * inView.length)];
     const p = P(tr.x, tr.y, 80);
-    if (p.x < app.cam.x - 60 || p.x > app.cam.x + viewW + 60 || p.y < app.cam.y - 100 || p.y > app.cam.y + viewH + 60) return;
     const base = P(tr.x, tr.y);
     addParticle({ kind: 'fall', x: p.x + (Math.random() - 0.5) * 40, y: p.y + (Math.random() - 0.5) * 20, vx: (Math.random() - 0.3) * 20 + (s.weather.wind ? 25 : 0), vy: 5,
       life: 6, ttl: 6, size: 2.4 + Math.random() * 1.4, color: A.LEAF_COLORS[Math.floor(Math.random() * A.LEAF_COLORS.length)], rot: Math.random() * 6, floor: base.y + 10 + Math.random() * 30 });
@@ -1184,7 +1592,7 @@
       const L = s.louis;
       if (s.pairs.some((p) => p.dog.state === 'chase')) { app.heartbeat -= dt; if (app.heartbeat <= 0) { sfx.heartbeat(); app.heartbeat = 0.55; } } else app.heartbeat = 0;
       app.ambient -= dt;
-      if (app.ambient <= 0) { if (!s.weather.rain) sfx.chirp(s.weather.evening); app.ambient = 3 + Math.random() * 5; }
+      if (app.ambient <= 0) { sfx.chirp(s.weather.evening); app.ambient = 3 + Math.random() * 5; }
       app.wishT -= dt;
       if (app.wishShow > 0) app.wishShow -= dt;
       if (app.wishT <= 0) { app.wishT = VISUAL.WISH_EVERY; app.wish = G.currentWish(s); app.wishShow = VISUAL.WISH_SHOW; }
@@ -1200,11 +1608,11 @@
       if (app.endTimer <= 0) showResult();
     } else if (app.mode === 'menu' && app.demo) {
       G.stepAmbient(app.demo, dt);
-      const k = app.time * 0.06;
-      updateCamera(dt, { x: 560 + Math.sin(k) * 260, y: 560 + Math.cos(k * 0.8) * 260 }, false);
+      // В меню камера медленно облетает район
+      const k = app.time * 0.05;
+      updateCamera(dt, { x: 1225 + Math.sin(k) * 650, y: 1225 + Math.cos(k * 0.8) * 650 }, false);
     }
     spawnFallingLeaves(dt);
-    updateRain(dt);
     updateParticles(dt);
     drawHome(dt);
   }
@@ -1243,7 +1651,7 @@
   makeDemo();
   resize();
   showMenu();
-  updateCamera(0, { x: 560, y: 560 }, true);
+  updateCamera(0, { x: 1225, y: 1225 }, true);
   requestAnimationFrame((t) => { last = t; frame(t); });
 
   if ('serviceWorker' in navigator) {

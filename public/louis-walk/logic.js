@@ -1,8 +1,8 @@
 /*
- * Выгуляй Луи - ядро игры: баланс, карта двора и вся симуляция прогулки.
+ * Выгуляй Луи - ядро игры: баланс, карта района и вся симуляция прогулки.
  * Без DOM и Canvas: работает в браузере (window.WalkLogic) и в Node.js для тестов.
  *
- * Координаты мира - плоскость земли двора: x и y от 0 до 1000.
+ * Координаты мира - плоскость земли: x и y от 0 до WORLD.size.
  * На экране двор рисуется в изометрии: см. ISO и toScreenDir.
  */
 (function (root, factory) {
@@ -15,7 +15,7 @@
 
   /* ================================================================
    *  БАЛАНС - все параметры в одном месте.
-   *  Расстояния в единицах двора (двор 1000 x 1000), время в секундах.
+   *  Расстояния в единицах двора, время в секундах.
    *  Шкалы от 0 до 100, полная шкала - цель выполнена.
    * ================================================================ */
   var CONFIG = {
@@ -43,7 +43,7 @@
     OWNER_HURRY_SPEED: 175,
     LEASH_SLACK: 80,            // ближе - хозяин стоит
     LEASH_MAX: 210,             // длина рулетки
-    LEASH_PANIC: 700,           // при испуге рулетка разматывается
+    LEASH_PANIC: 900,           // при испуге рулетка разматывается
     LEASH_REEL_SPEED: 160,      // потом сматывается обратно
     PICKUP_POOP_TIME: 1.4,      // хозяин убирает пакетом
     GIVE_R: 42,                 // поднести игрушку, чтобы её кинули
@@ -60,7 +60,7 @@
     PEE_SNIFF_TIME: 0.9,
     PEE_TIME: 1.4,
 
-    // Шкала «покакать»: один раз на траве
+    // Шкала «покакать»: один раз на траве или на собачьей площадке
     POOP_SNIFF_TIME: 1.3,
     POOP_SPIN_TIME: 1.3,
     POOP_TIME: 1.6,
@@ -70,22 +70,27 @@
 
     // Шкала «сбросить энергию»
     ENERGY_RUN: 0.014,          // за единицу пути бегом
-    ENERGY_WALK: 0.004,         // за единицу пути шагом
+    ENERGY_WALK: 0.005,         // за единицу пути шагом
     ENERGY_PILE: 12,            // прыжок в полную кучу листьев
     ENERGY_FETCH: 10,           // принёс брошенную игрушку
     ENERGY_PIGEONS: 8,
     ENERGY_CAT: 10,
-    ENERGY_PUDDLE: 3,
+    ENERGY_DUCKS: 6,
+    ENERGY_COURT_BALL: 6,       // погонял мяч у детей на спортплощадке
+    ENERGY_HURDLE: 5,           // перепрыгнул барьер на собачьей площадке
     PLAY_ENERGY_MULT: 2.5,      // бег рядом с подружившейся собакой
 
     // Шкала «зарядить счастье»
     HAPPY_FRIEND: 22,
     HAPPY_GRANDMA: 12,
+    HAPPY_SITTER: 8,            // погладили на лавочке в парке
     HAPPY_KID: 8,
     HAPPY_PILE: 4,
     HAPPY_FETCH: 4,
     HAPPY_PIGEONS: 3,
     HAPPY_CAT: 3,
+    HAPPY_DUCKS: 4,
+    HAPPY_COURT_BALL: 3,
     HAPPY_SCARE: -20,
     HAPPY_BAD: -15,
     HAPPY_SCOLD: -5,
@@ -103,9 +108,9 @@
       wrapper:     { group: 'bad',   name: 'обёртку' },
       mushroom:    { group: 'bad',   name: 'гриб' }
     },
-    TREATS: 6,
-    BAD_ITEMS: 7,
+    TREATS: 18,
     CHESTNUT_RESPAWN: 18,       // каштаны падают снова
+    KIOSK_DROP_TIME: 22,        // продавец шаурмы иногда бросает кусочек
 
     // «Фу»
     TEMPT_R: 75,                // рядом с гадостью Луи начинает к ней тянуться
@@ -118,12 +123,13 @@
     BAD_POOP_ROLLBACK: 100,     // съел гадость - шкала «покакать» откатывается
 
     // Чужие собаки с хозяевами
-    MAX_PAIRS: 3,
-    FIRST_PAIR_AT: 5,
-    PAIR_INTERVAL: [16, 30],
+    MAX_PAIRS: 6,               // гуляющих пар одновременно (без собачьей площадки)
+    START_PAIRS: 2,
+    FIRST_PAIR_AT: 4,
+    PAIR_INTERVAL: [8, 16],
     PAIR_WALK_SPEED: 52,
     DOG_LEASH: 55,
-    BIG_ANGRY_CHANCE: 0.6,      // большая собака злая, иначе добрая
+    BIG_ANGRY_CHANCE: 0.55,     // большая собака злая, иначе добрая
     SMALL_GRUMPY_CHANCE: 0.25,  // маленькая вредная, иначе добрая
     GREET_R: 130,
     INVITE_R: 190,
@@ -146,26 +152,30 @@
     PET_R: 46,
     PET_TIME: 1.1,
     GRANDMA_COOLDOWN: 25,
+    SITTER_COOLDOWN: 25,
     KID_COOLDOWN: 16,
     KID_RUN_R: 150,
 
-    // Голуби, кошки, дворник, кучи, лужи
-    PIGEON_FLEE_R: 75,
-    PIGEON_FLY_TIME: 2.4,
+    // Голуби, кошки, утки, дворники, кучи
+    PIGEON_FLEE_R: 95,          // голуби взлетают сразу, как Луи подошёл
+    PIGEON_FLY_TIME: 2.6,
     CAT_FLEE_R: 95,
     CAT_SPEED: 240,
     CAT_PERCH_TIME: 14,
-    PILE_R: 24,
+    DUCK_SCARE_R: 120,
+    DUCK_COOLDOWN: 6,
+    PILE_R: 32,
     PILE_MIN_SIZE: 0.35,
     PILE_JUMP_SPEED: 50,
     SWEEP_RATE: 0.22,
     SCOLD_R: 170,
     JANITOR_SPEED: 45,
+    HURDLE_COOLDOWN: 3,
+    COURT_BALL_COOLDOWN: 4,
     WIND_INTERVAL: [14, 26],
     WIND_PILE_LOSS: 0.3,
 
-    // Погода (каждая прогулка случайная)
-    RAIN_CHANCE: 0.3,
+    // Погода (каждая прогулка случайная, дождя нет)
     WIND_CHANCE: 0.5,
     EVENING_CHANCE: 0.4,
 
@@ -183,93 +193,127 @@
   var ISO = { X: 0.7071, Y: 0.3536 };
 
   /* ================================================================
-   *  КАРТА ДВОРА
-   *  Дом буквой Г вдоль дальних краёв, у ближних краёв забор с калитками.
+   *  КАРТА РАЙОНА: четыре квартала вокруг перекрёстка двух проездов.
+   *  Дальние края - дома, ближние - забор с калитками.
+   *    Двор Луи (x<1300, y<1300): подъезд, детская площадка, фонтан.
+   *    Магазин (x>1400, y<1300): «Продукты», ларёк с шаурмой, площадка для собак.
+   *    Спорт (x<1300, y>1400): спортплощадка с детьми и мячом, гаражи с котами на крышах.
+   *    Парк (x>1400, y>1400): аллеи, пруд с утками, беседка.
    * ================================================================ */
-  var WORLD = {
-    size: 1000,
-    door: { x: 520, y: 110 },
-    safe: { x: 520, y: 152 },
-    buildings: [
-      { x: 120, y: 0, w: 880, h: 110, height: 230, doorsAlongX: [300, 520, 800] },
-      { x: 0, y: 0, w: 120, h: 1000, height: 230, doorsAlongY: [420, 760] }
-    ],
-    // Дорожки из плитки. Всё, что не дорожка и не площадка, - газон
-    paths: [
-      { x: 120, y: 110, w: 880, h: 60 },
-      { x: 120, y: 170, w: 60, h: 830 },
-      { x: 490, y: 170, w: 60, h: 330 },
-      { x: 180, y: 500, w: 820, h: 60 },
-      { x: 300, y: 560, w: 60, h: 440 },
-      { x: 700, y: 560, w: 40, h: 80 }
-    ],
-    playground: { x: 620, y: 640, w: 250, h: 230 },
-    sandbox: { x: 660, y: 690, w: 80, h: 70 },
-    solids: [
-      { x: 120, y: 0, w: 880, h: 110, kind: 'building' },
-      { x: 0, y: 0, w: 120, h: 1000, kind: 'building' },
-      { x: 340, y: 186, w: 70, h: 22, kind: 'bench', grandma: true },
-      { x: 610, y: 186, w: 70, h: 22, kind: 'bench' },
-      { x: 930, y: 180, w: 70, h: 36, kind: 'bins' }, // вплотную к забору, без щели
-      { x: 940, y: 600, w: 60, h: 100, kind: 'car', color: '#c0392b' },
-      { x: 940, y: 730, w: 60, h: 100, kind: 'car', color: '#ecf0f1' },
-      { x: 940, y: 860, w: 60, h: 100, kind: 'car', color: '#2c3e50' },
-      { x: 780, y: 680, w: 60, h: 12, kind: 'swings' },
-      { x: 770, y: 790, w: 24, h: 60, kind: 'slide' }
-    ],
-    trees: [
-      { x: 230, y: 260, r: 10, type: 'maple' }, { x: 700, y: 300, r: 10, type: 'maple' },
-      { x: 420, y: 700, r: 10, type: 'maple' }, { x: 250, y: 880, r: 10, type: 'maple' },
-      { x: 380, y: 300, r: 9, type: 'birch' }, { x: 560, y: 700, r: 9, type: 'birch' },
-      { x: 215, y: 650, r: 9, type: 'birch' }, { x: 300, y: 410, r: 11, type: 'chestnut' },
-      { x: 800, y: 270, r: 10, type: 'linden' }, { x: 450, y: 950, r: 10, type: 'linden' },
-      { x: 700, y: 950, r: 10, type: 'linden' }, { x: 860, y: 420, r: 10, type: 'maple' }
-    ],
-    bushes: [
-      { x: 420, y: 420, r: 30 }, { x: 650, y: 440, r: 28 }, { x: 225, y: 770, r: 30 },
-      { x: 500, y: 830, r: 28 }, { x: 860, y: 960, r: 26 }, { x: 590, y: 960, r: 26 }
-    ],
-    lamps: [
-      { x: 480, y: 235, r: 5 }, { x: 562, y: 400, r: 5 }, { x: 250, y: 490, r: 5 },
-      { x: 680, y: 490, r: 5 }, { x: 372, y: 700, r: 5 }, { x: 372, y: 900, r: 5 },
-      { x: 880, y: 490, r: 5 }
-    ],
-    pumpkins: [{ x: 470, y: 118, r: 8 }, { x: 571, y: 117, r: 7 }, { x: 585, y: 116, r: 6 }], // вплотную к стене, без щелей
-    piles: [{ x: 430, y: 340 }, { x: 640, y: 380 }, { x: 240, y: 615 }, { x: 560, y: 610 }, { x: 450, y: 880 }, { x: 780, y: 950 }],
-    pigeonSpots: [{ x: 445, y: 235 }, { x: 600, y: 530 }, { x: 870, y: 245 }, { x: 330, y: 760 }],
-    catSpots: [{ x: 905, y: 660 }, { x: 900, y: 900 }],
-    puddles: [
-      { x: 520, y: 330, rx: 30, ry: 22 }, { x: 410, y: 530, rx: 34, ry: 22 },
-      { x: 330, y: 800, rx: 26, ry: 20 }, { x: 770, y: 530, rx: 30, ry: 22 }, { x: 150, y: 620, rx: 22, ry: 26 }
-    ],
-    // Маршруты чужих собак: от калитки по дорожкам и обратно
-    gates: [{ x: 330, y: 995 }, { x: 995, y: 530 }],
-    routes: [
-      [{ x: 330, y: 995 }, { x: 330, y: 530 }, { x: 520, y: 530 }, { x: 900, y: 530 }, { x: 995, y: 530 }],
-      [{ x: 995, y: 530 }, { x: 520, y: 530 }, { x: 330, y: 530 }, { x: 330, y: 995 }],
-      [{ x: 330, y: 995 }, { x: 330, y: 530 }, { x: 720, y: 540 }, { x: 720, y: 640 }, { x: 720, y: 540 }, { x: 330, y: 530 }, { x: 330, y: 995 }],
-      [{ x: 995, y: 530 }, { x: 720, y: 540 }, { x: 720, y: 660 }, { x: 720, y: 540 }, { x: 330, y: 530 }, { x: 330, y: 995 }]
-    ],
-    playgroundBounds: { x: 640, y: 660, w: 210, h: 190 },
-    grandmaSpot: { x: 375, y: 235 },
-    // Шкала газона для спавна: дальше от дома
-    spawn: { x0: 140, y0: 180, x1: 985, y1: 985 }
-  };
+  var S = 2450;
 
-  // Места, которые Луи может пометить: деревья, столбы, кусты, углы машин и баков, столбики забора
-  function buildMarkSpots() {
-    var spots = [];
-    WORLD.trees.forEach(function (t) { spots.push({ x: t.x, y: t.y, kind: 'tree' }); });
-    WORLD.lamps.forEach(function (l) { spots.push({ x: l.x, y: l.y, kind: 'lamp' }); });
-    WORLD.bushes.forEach(function (b) { spots.push({ x: b.x, y: b.y + b.r * 0.6, kind: 'bush' }); });
-    WORLD.solids.forEach(function (s) {
-      if (s.kind === 'car') spots.push({ x: s.x - 2, y: s.y + 20, kind: 'car' });
-      if (s.kind === 'bins') spots.push({ x: s.x + 10, y: s.y + s.h + 2, kind: 'bins' });
-    });
-    [200, 450, 650, 850].forEach(function (x) { spots.push({ x: x, y: 997, kind: 'fence' }); });
-    [220, 420, 700].forEach(function (y) { spots.push({ x: 997, y: y, kind: 'fence' }); });
-    return spots;
+  function rect(x, y, w, h, kind, extra) {
+    var r = { x: x, y: y, w: w, h: h, kind: kind };
+    for (var k in extra) r[k] = extra[k];
+    return r;
   }
+
+  var WORLD = {
+    size: S,
+    door: { x: 700, y: 120 },
+    safe: { x: 700, y: 165 },
+    buildings: [
+      { x: 160, y: 0, w: 1140, h: 120, height: 230, face: 'y', doors: [{ at: 420 }, { at: 700, home: true }, { at: 1000 }] },
+      { x: 0, y: 0, w: 160, h: 1300, height: 230, face: 'x', doors: [{ at: 450 }, { at: 950 }] },
+      { x: 1450, y: 0, w: 1000, h: 120, height: 200, face: 'y', doors: [{ at: 1650, shop: true }, { at: 2150 }] },
+      { x: 0, y: 1450, w: 160, h: 1000, height: 200, face: 'x', doors: [{ at: 1800 }, { at: 2200 }] }
+    ],
+    // Покрытия земли: всё остальное - газон
+    paths: [
+      rect(0, 1300, S, 100, 'road'), rect(1300, 0, 100, S, 'road'),
+      rect(160, 1270, S - 160, 30, 'sidewalk'), rect(160, 1400, S - 160, 30, 'sidewalk'),
+      rect(1270, 120, 30, S - 120, 'sidewalk'), rect(1400, 120, 30, S - 120, 'sidewalk'),
+      // Двор Луи
+      rect(160, 120, 1110, 60, 'sidewalk'), rect(160, 180, 60, 1090, 'sidewalk'),
+      rect(670, 180, 60, 520, 'tile', { lamps: true }), rect(220, 680, 1050, 60, 'tile', { lamps: true }),
+      rect(950, 740, 40, 110, 'tile'), rect(430, 740, 40, 140, 'tile'),
+      rect(330, 880, 240, 240, 'tile'),
+      rect(800, 850, 350, 350, 'rubber'),
+      // Магазин
+      rect(1430, 120, 1020, 60, 'sidewalk'), rect(1430, 420, 1020, 50, 'tile', { lamps: true }),
+      rect(1600, 180, 50, 1090, 'tile', { lamps: true }), rect(1650, 860, 150, 60, 'tile'),
+      rect(1850, 180, 200, 240, 'tile'),
+      rect(1806, 606, 488, 538, 'dirt'),
+      // Спорт и гаражи
+      rect(160, 1430, 60, 1020, 'sidewalk'), rect(700, 1430, 50, 1020, 'tile', { lamps: true }),
+      rect(220, 2150, 1050, 50, 'tile', { lamps: true }), rect(220, 2295, 1050, 90, 'asphalt'),
+      rect(800, 1530, 420, 420, 'court'),
+      // Парк
+      rect(1430, 1600, 1020, 50, 'gravel', { lamps: true }), rect(1600, 1430, 50, 1020, 'gravel', { lamps: true }),
+      rect(1925, 1650, 50, 95, 'gravel')
+    ],
+    ponds: [{ x: 1950, y: 1960, rx: 230, ry: 170, ring: 55 }],
+    playground: { x: 800, y: 850, w: 350, h: 350 },
+    sandbox: { x: 880, y: 900, w: 90, h: 80 },
+    court: { x: 800, y: 1530, w: 420, h: 420 },
+    dogPark: { x: 1806, y: 606, w: 488, h: 538 },
+    kiosk: { x: 1900, y: 250, w: 90, h: 70, drop: { x: 1945, y: 345 } },
+    solids: [
+      rect(160, 0, 1140, 120, 'building'), rect(0, 0, 160, 1300, 'building'),
+      rect(1450, 0, 1000, 120, 'building'), rect(0, 1450, 160, 1000, 'building'),
+      rect(1300, 0, 150, 16, 'barrier'), rect(0, 1300, 16, 150, 'barrier'),
+      // Двор Луи
+      rect(560, 196, 70, 22, 'bench', { sitter: 'grandma' }), rect(800, 196, 70, 22, 'bench'),
+      rect(345, 1090, 60, 20, 'bench'), rect(495, 1090, 60, 20, 'bench'),
+      rect(1180, 190, 70, 36, 'bins'),
+      rect(1000, 900, 70, 12, 'swings'), rect(870, 1050, 24, 70, 'slide'),
+      // Магазин
+      rect(1900, 250, 90, 70, 'kiosk'), rect(2080, 200, 70, 36, 'bins'),
+      rect(1700, 480, 70, 20, 'bench'),
+      rect(1800, 600, 500, 6, 'fence'), rect(1800, 1144, 500, 6, 'fence'),
+      rect(1800, 600, 6, 260, 'fence'), rect(1800, 920, 6, 230, 'fence'), rect(2294, 600, 6, 550, 'fence'),
+      // Машины у проездов
+      rect(300, 1306, 100, 44, 'car', { color: '#c0392b' }), rect(560, 1306, 100, 44, 'car', { color: '#ecf0f1' }),
+      rect(900, 1350, 100, 44, 'car', { color: '#2c3e50' }), rect(1600, 1306, 100, 44, 'car', { color: '#27ae60' }),
+      rect(1900, 1350, 100, 44, 'car', { color: '#f1c40f' }), rect(2200, 1306, 100, 44, 'car', { color: '#8e44ad' }),
+      rect(1306, 300, 44, 100, 'car', { color: '#2980b9' }), rect(1350, 650, 44, 100, 'car', { color: '#ecf0f1' }),
+      rect(1306, 1650, 44, 100, 'car', { color: '#d35400' }), rect(1350, 2050, 44, 100, 'car', { color: '#7f8c8d' }),
+      // Спорт и гаражи
+      rect(1004, 1535, 12, 12, 'hoop'), rect(1004, 1933, 12, 12, 'hoop'),
+      rect(260, 2215, 400, 80, 'garages'), rect(800, 2215, 400, 80, 'garages'),
+      // Парк
+      rect(2250, 1480, 90, 90, 'gazebo'),
+      rect(1700, 1660, 70, 20, 'bench'), rect(2000, 1660, 70, 20, 'bench', { sitter: 'reader' }),
+      rect(1450, 2050, 70, 20, 'bench')
+    ],
+    // Барьеры на собачьей площадке: проходимые, перепрыгивает бегом
+    hurdles: [rect(1950, 700, 12, 70, 'hurdle'), rect(2100, 850, 12, 70, 'hurdle'), rect(1950, 1000, 12, 70, 'hurdle')],
+    fountain: { x: 450, y: 1000, r: 50 },
+    pumpkins: [{ x: 630, y: 128, r: 8 }, { x: 771, y: 127, r: 7 }, { x: 785, y: 126, r: 6 }],
+    // Точки маршрутов соседей с собаками
+    nodes: {
+      g1: { x: 1415, y: 2440, gate: true }, g2: { x: 2440, y: 1415, gate: true }, g3: { x: 2440, y: 1625, gate: true },
+      g4: { x: 725, y: 2440, gate: true }, g5: { x: 2440, y: 445, gate: true }, g6: { x: 1625, y: 2440, gate: true },
+      cNW: { x: 1285, y: 1285 }, cNE: { x: 1415, y: 1285 }, cSW: { x: 1285, y: 1415 }, cSE: { x: 1415, y: 1415 },
+      q1a: { x: 700, y: 710 }, q1b: { x: 250, y: 710 }, q1c: { x: 1285, y: 710 }, q1d: { x: 970, y: 800 }, q1e: { x: 450, y: 820 },
+      q2a: { x: 1625, y: 445 }, q2c: { x: 1625, y: 890 }, q2d: { x: 1625, y: 1285 }, q2p: { x: 1760, y: 890 },
+      q3a: { x: 725, y: 1415 }, q3b: { x: 725, y: 2175 }, q3d: { x: 250, y: 2175 }, q3e: { x: 1285, y: 2175 },
+      q4a: { x: 1625, y: 1415 }, q4b: { x: 1625, y: 1625 }, q4c: { x: 1950, y: 1625 }, q4e: { x: 1690, y: 1960 }
+    },
+    edges: [
+      ['g1', 'cSE'], ['cSE', 'cNE'], ['cSE', 'cSW'], ['cSE', 'q4a'], ['cSE', 'g2'], ['cNE', 'q2d'], ['cNE', 'cNW'],
+      ['cNW', 'q1c'], ['cNW', 'cSW'], ['cSW', 'q3a'], ['q1c', 'q1a'], ['q1a', 'q1b'], ['q1a', 'q1d'], ['q1a', 'q1e'],
+      ['q2d', 'q2c'], ['q2c', 'q2a'], ['q2a', 'g5'], ['q2c', 'q2p'], ['q3a', 'q3b'], ['q3b', 'q3d'], ['q3b', 'q3e'],
+      ['q3b', 'g4'], ['q3e', 'cSW'], ['q4a', 'q4b'], ['q4b', 'g3'], ['q4b', 'q4c'], ['q4b', 'q4e'], ['q4e', 'g6']
+    ],
+    // Проёмы в ближнем заборе (по краю y = S и x = S)
+    fenceGaps: [
+      { edge: 'y', a: 1290, b: 1440 }, { edge: 'y', a: 695, b: 755 }, { edge: 'y', a: 1595, b: 1655 },
+      { edge: 'x', a: 1290, b: 1440 }, { edge: 'x', a: 1595, b: 1655 }, { edge: 'x', a: 415, b: 475 }
+    ],
+    sitters: [
+      { kind: 'grandma', look: 'grandma', x: 595, y: 207, spot: { x: 595, y: 248 } },
+      { kind: 'reader', look: 'coatPlum', x: 2035, y: 1670, spot: { x: 2035, y: 1712 } }
+    ],
+    playgroundBounds: { x: 820, y: 870, w: 310, h: 310 },
+    courtBounds: { x: 815, y: 1545, w: 390, h: 390 },
+    dogParkBounds: { x: 1830, y: 630, w: 440, h: 490 },
+    pigeonSpots: [{ x: 1700, y: 300 }, { x: 2100, y: 445 }, { x: 650, y: 255 }, { x: 1010, y: 1470 },
+      { x: 1800, y: 1625 }, { x: 450, y: 1160 }, { x: 1000, y: 2175 }, { x: 2200, y: 1430 }],
+    catSpots: [{ x: 450, y: 2335 }, { x: 1000, y: 2335 }, { x: 1150, y: 250 }, { x: 1250, y: 700 }],
+    spawn: { x0: 180, y0: 140, x1: S - 20, y1: S - 20 },
+    trees: [], bushes: [], lamps: [], piles: []
+  };
 
   /* ------------------------------ утилиты ------------------------------ */
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -278,6 +322,16 @@
   function rand(rng, a, b) { return a + rng() * (b - a); }
   function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
   function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
 
   /** Направление на экране (dx, dy) в направление на земле двора. */
   function toWorldDir(sx, sy) {
@@ -285,22 +339,29 @@
     return { x: (a + b) / 2, y: (b - a) / 2 };
   }
   /** Смещение на земле в смещение на экране. */
-  function toScreenDir(wx, wy) {
-    return { x: (wx - wy) * ISO.X, y: (wx + wy) * ISO.Y };
-  }
+  function toScreenDir(wx, wy) { return { x: (wx - wy) * ISO.X, y: (wx + wy) * ISO.Y }; }
 
   function inSafeZone(x, y) { return dist(x, y, WORLD.safe.x, WORLD.safe.y) < CONFIG.SAFE_R; }
 
+  function pondValue(x, y, p, extra) {
+    var nx = (x - p.x) / (p.rx + extra), ny = (y - p.y) / (p.ry + extra);
+    return nx * nx + ny * ny;
+  }
+  function inWater(x, y) { return WORLD.ponds.some(function (p) { return pondValue(x, y, p, 0) < 1; }); }
+
   function isLawn(x, y) {
-    if (x < 125 || y < 115 || x > 1000 || y > 1000) return false;
+    if (x < 0 || y < 0 || x > S || y > S) return false;
     for (var i = 0; i < WORLD.paths.length; i++) if (inRect(x, y, WORLD.paths[i])) return false;
-    if (inRect(x, y, WORLD.playground)) return false;
+    for (var j = 0; j < WORLD.ponds.length; j++) if (pondValue(x, y, WORLD.ponds[j], WORLD.ponds[j].ring) < 1) return false;
+    for (var k = 0; k < WORLD.buildings.length; k++) if (inRect(x, y, WORLD.buildings[k])) return false;
     return true;
   }
+  /** Где можно покакать: газон или собачья площадка. */
+  function isPoopGround(x, y) { return isLawn(x, y) || inRect(x, y, WORLD.dogPark); }
 
   /* ---------------------------- столкновения ---------------------------- */
-  function pushOutOfRect(e, r, rect) {
-    var cx = clamp(e.x, rect.x, rect.x + rect.w), cy = clamp(e.y, rect.y, rect.y + rect.h);
+  function pushOutOfRect(e, r, rc) {
+    var cx = clamp(e.x, rc.x, rc.x + rc.w), cy = clamp(e.y, rc.y, rc.y + rc.h);
     var dx = e.x - cx, dy = e.y - cy, q = dx * dx + dy * dy;
     if (q >= r * r) return false;
     if (q > 1e-9) {
@@ -308,10 +369,10 @@
       e.x += dx * k; e.y += dy * k;
       return true;
     }
-    var left = e.x - rect.x, right = rect.x + rect.w - e.x, top = e.y - rect.y, bottom = rect.y + rect.h - e.y;
+    var left = e.x - rc.x, right = rc.x + rc.w - e.x, top = e.y - rc.y, bottom = rc.y + rc.h - e.y;
     var m = Math.min(left, right, top, bottom);
-    if (m === left) e.x = rect.x - r; else if (m === right) e.x = rect.x + rect.w + r;
-    else if (m === top) e.y = rect.y - r; else e.y = rect.y + rect.h + r;
+    if (m === left) e.x = rc.x - r; else if (m === right) e.x = rc.x + rc.w + r;
+    else if (m === top) e.y = rc.y - r; else e.y = rc.y + rc.h + r;
     return true;
   }
   function pushOutOfCircle(e, r, c) {
@@ -323,13 +384,25 @@
     e.x += dx * k; e.y += dy * k;
     return true;
   }
-  var CIRCLES = WORLD.trees.concat(WORLD.lamps, WORLD.pumpkins);
+  /** Пруд: выталкиваем на берег, эллипс расширен на радиус. */
+  function pushOutOfPond(e, r, p) {
+    var v = pondValue(e.x, e.y, p, r);
+    if (v >= 1) return false;
+    var dx = e.x - p.x, dy = e.y - p.y;
+    if (Math.abs(dx) + Math.abs(dy) < 1e-6) dy = 1;
+    var k = 1 / Math.sqrt(pondValue(p.x + dx, p.y + dy, p, r));
+    e.x = p.x + dx * k * 1.001;
+    e.y = p.y + dy * k * 1.001;
+    return true;
+  }
+  var CIRCLES = []; // деревья, фонари, тыквы, фонтан: заполняется после генерации
 
   function resolveCollisions(e, r) {
     var hit = false;
     for (var i = 0; i < WORLD.solids.length; i++) hit = pushOutOfRect(e, r, WORLD.solids[i]) || hit;
     for (var j = 0; j < CIRCLES.length; j++) hit = pushOutOfCircle(e, r, CIRCLES[j]) || hit;
-    var lo = r, hi = WORLD.size - r;
+    for (var k = 0; k < WORLD.ponds.length; k++) hit = pushOutOfPond(e, r, WORLD.ponds[k]) || hit;
+    var lo = r, hi = S - r;
     if (e.x < lo) { e.x = lo; hit = true; } else if (e.x > hi) { e.x = hi; hit = true; }
     if (e.y < lo) { e.y = lo; hit = true; } else if (e.y > hi) { e.y = hi; hit = true; }
     return hit;
@@ -341,21 +414,22 @@
     return dist(ox, oy, e.x, e.y);
   }
   function isFree(x, y, r) {
-    if (x < r || y < r || x > WORLD.size - r || y > WORLD.size - r) return false;
+    if (x < r || y < r || x > S - r || y > S - r) return false;
     for (var i = 0; i < WORLD.solids.length; i++) {
       var s = WORLD.solids[i];
       if (dist(x, y, clamp(x, s.x, s.x + s.w), clamp(y, s.y, s.y + s.h)) < r) return false;
     }
     for (var j = 0; j < CIRCLES.length; j++) if (dist(x, y, CIRCLES[j].x, CIRCLES[j].y) < r + CIRCLES[j].r) return false;
+    for (var k = 0; k < WORLD.ponds.length; k++) if (pondValue(x, y, WORLD.ponds[k], r) < 1) return false;
     return true;
   }
   function randomPoint(rng, r, accept) {
     var a = WORLD.spawn;
-    for (var i = 0; i < 500; i++) {
+    for (var i = 0; i < 800; i++) {
       var x = rand(rng, a.x0, a.x1), y = rand(rng, a.y0, a.y1);
       if (isFree(x, y, r) && (!accept || accept(x, y))) return { x: x, y: y };
     }
-    return { x: 520, y: 600 };
+    return { x: 700, y: 710 };
   }
   function keepOutOfSafeZone(e) {
     var d = dist(e.x, e.y, WORLD.safe.x, WORLD.safe.y), min = CONFIG.SAFE_R + e.r;
@@ -365,7 +439,10 @@
     e.y = WORLD.safe.y + (e.y - WORLD.safe.y) / d * min;
     resolveCollisions(e, e.r);
   }
-
+  function setFacing(e, dx, dy) {
+    var sx = (dx - dy) * ISO.X;
+    if (Math.abs(sx) > 0.05) e.facing = sx > 0 ? 1 : -1;
+  }
   /** Двигает к точке; возвращает пройденное. Обновляет facing по экрану и застревание. */
   function moveToward(e, tx, ty, speed, dt) {
     var dx = tx - e.x, dy = ty - e.y, l = Math.sqrt(dx * dx + dy * dy);
@@ -377,9 +454,131 @@
     e.stuck = moved < step * 0.3 ? (e.stuck || 0) + dt : 0;
     return moved;
   }
-  function setFacing(e, dx, dy) {
-    var sx = (dx - dy) * ISO.X;
-    if (Math.abs(sx) > 0.05) e.facing = sx > 0 ? 1 : -1;
+
+  /* ------------------- раскладка деревьев, кустов, фонарей ------------------- */
+  (function generateWorld() {
+    var rng = mulberry32(20241024);
+    var solidsAndPaths = function (x, y, pad) {
+      if (!isLawn(x, y)) return false;
+      for (var i = 0; i < WORLD.paths.length; i++) {
+        var p = WORLD.paths[i];
+        if (dist(x, y, clamp(x, p.x, p.x + p.w), clamp(y, p.y, p.y + p.h)) < pad) return false;
+      }
+      for (var j = 0; j < WORLD.solids.length; j++) {
+        var s = WORLD.solids[j];
+        if (dist(x, y, clamp(x, s.x, s.x + s.w), clamp(y, s.y, s.y + s.h)) < pad + 30) return false;
+      }
+      if (dist(x, y, WORLD.safe.x, WORLD.safe.y) < CONFIG.SAFE_R + 60) return false;
+      if (inRect(x, y, WORLD.dogPark)) return false;
+      // Зазор до края больше диаметра большой собаки: иначе в щели можно застрять
+      return x > 220 && y > 180 && x < S - 70 && y < S - 70;
+    };
+    var trees = WORLD.trees;
+    var types = ['maple', 'maple', 'birch', 'linden', 'linden', 'maple', 'birch'];
+    // Каштаны: у них падают каштаны (фу!)
+    trees.push({ x: 400, y: 420, r: 11, type: 'chestnut' }, { x: 2250, y: 2260, r: 11, type: 'chestnut' });
+    var quotas = [
+      { x0: 200, y0: 180, x1: 1260, y1: 1260, n: 16 },
+      { x0: 1440, y0: 180, x1: 2430, y1: 1260, n: 10 },
+      { x0: 200, y0: 1440, x1: 1260, y1: 2430, n: 12 },
+      { x0: 1440, y0: 1440, x1: 2430, y1: 2430, n: 30 }
+    ];
+    quotas.forEach(function (q) {
+      var placed = 0;
+      for (var tries = 0; tries < 4000 && placed < q.n; tries++) {
+        var x = rand(rng, q.x0, q.x1), y = rand(rng, q.y0, q.y1);
+        if (!solidsAndPaths(x, y, 30)) continue;
+        if (trees.some(function (t) { return dist(x, y, t.x, t.y) < 95; })) continue;
+        trees.push({ x: Math.round(x), y: Math.round(y), r: 10, type: pick(rng, types) });
+        placed++;
+      }
+    });
+    for (var b = 0, tries2 = 0; b < 34 && tries2 < 6000; tries2++) {
+      var bx = rand(rng, 200, S - 40), by = rand(rng, 160, S - 40), br = 24 + Math.round(rng() * 10);
+      if (!solidsAndPaths(bx, by, br + 6)) continue;
+      if (trees.some(function (t) { return dist(bx, by, t.x, t.y) < br + 30; })) continue;
+      if (WORLD.bushes.some(function (o) { return dist(bx, by, o.x, o.y) < br + o.r + 40; })) continue;
+      WORLD.bushes.push({ x: Math.round(bx), y: Math.round(by), r: br });
+      b++;
+    }
+    // Фонари вдоль дорожек
+    var lampAlong = function (p, step) {
+      if (p.w >= p.h) for (var x = p.x + 60; x < p.x + p.w - 30; x += step) WORLD.lamps.push({ x: x, y: p.y - 9, r: 5 });
+      else for (var y = p.y + 60; y < p.y + p.h - 30; y += step) WORLD.lamps.push({ x: p.x - 9, y: y, r: 5 });
+    };
+    WORLD.paths.filter(function (p) { return p.lamps; }).forEach(function (p) { lampAlong(p, 260); });
+    WORLD.lamps = WORLD.lamps.filter(function (l) {
+      if (!isLawn(l.x, l.y)) return false;
+      for (var j = 0; j < WORLD.solids.length; j++) {
+        var s = WORLD.solids[j];
+        if (dist(l.x, l.y, clamp(l.x, s.x, s.x + s.w), clamp(l.y, s.y, s.y + s.h)) < 40) return false;
+      }
+      return !trees.some(function (t) { return dist(l.x, l.y, t.x, t.y) < 60; }) && !inSafeZone(l.x, l.y);
+    });
+    // Кучи листьев на газонах
+    for (var n = 0, tries3 = 0; n < 16 && tries3 < 6000; tries3++) {
+      var px = rand(rng, 220, S - 60), py = rand(rng, 200, S - 60);
+      if (!solidsAndPaths(px, py, 40)) continue;
+      if (trees.concat(WORLD.bushes).some(function (t) { return dist(px, py, t.x, t.y) < 60; })) continue;
+      if (WORLD.lamps.some(function (l) { return dist(px, py, l.x, l.y) < 50; })) continue;
+      if (WORLD.piles.some(function (o) { return dist(px, py, o.x, o.y) < 260; })) continue;
+      WORLD.piles.push({ x: Math.round(px), y: Math.round(py) });
+      n++;
+    }
+    CIRCLES = WORLD.trees.concat(WORLD.lamps, WORLD.pumpkins, [WORLD.fountain]);
+  })();
+
+  // Места, которые Луи может пометить
+  function buildMarkSpots() {
+    var spots = [];
+    WORLD.trees.forEach(function (t) { spots.push({ x: t.x, y: t.y, kind: 'tree' }); });
+    WORLD.lamps.forEach(function (l) { spots.push({ x: l.x, y: l.y, kind: 'lamp' }); });
+    WORLD.bushes.forEach(function (b) { spots.push({ x: b.x, y: b.y + b.r * 0.6, kind: 'bush' }); });
+    WORLD.solids.forEach(function (s) {
+      if (s.kind === 'car') spots.push(s.w > s.h ? { x: s.x + 15, y: s.y + s.h + 2, kind: 'car' } : { x: s.x + s.w + 2, y: s.y + 15, kind: 'car' });
+      if (s.kind === 'bins') spots.push({ x: s.x + 10, y: s.y + s.h + 2, kind: 'bins' });
+      if (s.kind === 'kiosk') spots.push({ x: s.x + s.w + 2, y: s.y + s.h - 6, kind: 'kiosk' });
+      if (s.kind === 'garages') spots.push({ x: s.x + 20, y: s.y + s.h + 2, kind: 'garage' }, { x: s.x + s.w - 20, y: s.y + s.h + 2, kind: 'garage' });
+      if (s.kind === 'gazebo') spots.push({ x: s.x + s.w + 2, y: s.y + s.h + 2, kind: 'gazebo' });
+    });
+    [400, 1000, 1900, 2250].forEach(function (x) { spots.push({ x: x, y: S - 3, kind: 'fence' }); });
+    [250, 800, 1900, 2250].forEach(function (y) { spots.push({ x: S - 3, y: y, kind: 'fence' }); });
+    [700, 1000].forEach(function (y) { spots.push({ x: 1797, y: y, kind: 'fence' }); });
+    return spots;
+  }
+
+  /* ------------------------------ маршруты ------------------------------ */
+  var ADJ = {};
+  WORLD.edges.forEach(function (e) {
+    (ADJ[e[0]] = ADJ[e[0]] || []).push(e[1]);
+    (ADJ[e[1]] = ADJ[e[1]] || []).push(e[0]);
+  });
+  var GATES = Object.keys(WORLD.nodes).filter(function (k) { return WORLD.nodes[k].gate; });
+
+  function shortestPath(a, b) {
+    var prev = {}, queue = [a], seen = {};
+    seen[a] = true;
+    while (queue.length) {
+      var n = queue.shift();
+      if (n === b) break;
+      (ADJ[n] || []).forEach(function (m) { if (!seen[m]) { seen[m] = true; prev[m] = n; queue.push(m); } });
+    }
+    var path = [b];
+    while (path[0] !== a) { path.unshift(prev[path[0]]); if (path[0] === undefined) return [a, b]; }
+    return path;
+  }
+  /** Маршрут: от узла start случайно по дорожкам, потом к случайной калитке. */
+  function makeRoute(rng, start) {
+    var names = [start], cur = start, prevN = null;
+    var steps = 3 + Math.floor(rng() * 5);
+    for (var i = 0; i < steps; i++) {
+      var opts = (ADJ[cur] || []).filter(function (m) { return m !== prevN && !WORLD.nodes[m].gate; });
+      if (!opts.length) break;
+      prevN = cur; cur = pick(rng, opts); names.push(cur);
+    }
+    var exit = pick(rng, GATES);
+    names = names.concat(shortestPath(cur, exit).slice(1));
+    return names.map(function (k) { return { x: Math.min(WORLD.nodes[k].x, S - 12), y: Math.min(WORLD.nodes[k].y, S - 12) }; });
   }
 
   /* ------------------------------ создание ------------------------------ */
@@ -404,7 +603,6 @@
     for (var k in extra) it[k] = extra[k];
     return it;
   }
-
   function spawnTreat(s, rng) {
     var L = s.louis;
     var p = randomPoint(rng, 10, function (x, y) {
@@ -412,29 +610,38 @@
     });
     return makeItem(pick(rng, ['cookie', 'biscuit', 'biscuit', 'sausage']), p.x, p.y);
   }
-
-  function spawnBad(s, rng, kind) {
-    var L = s.louis, chest = WORLD.trees.filter(function (t) { return t.type === 'chestnut'; })[0];
-    var p;
-    if (kind === 'chestnut') {
-      for (var i = 0; i < 40 && !p; i++) {
-        var a = rng() * Math.PI * 2, r = rand(rng, 20, 75);
-        var x = chest.x + Math.cos(a) * r, y = chest.y + Math.sin(a) * r;
-        if (isFree(x, y, 8) && (!L || dist(x, y, L.x, L.y) > 90)) p = { x: x, y: y };
-      }
-    } else if (kind === 'mushroom') {
-      for (var j = 0; j < 40 && !p; j++) {
-        var t = pick(rng, WORLD.trees), b = rng() * Math.PI * 2;
-        var mx = t.x + Math.cos(b) * 30, my = t.y + Math.sin(b) * 30;
-        if (isFree(mx, my, 8) && isLawn(mx, my) && (!L || dist(mx, my, L.x, L.y) > 90)) p = { x: mx, y: my };
+  /** Гадость рядом с точкой (cx, cy) в радиусе rad или где угодно. */
+  function spawnBad(s, rng, kind, near) {
+    var L = s.louis, p = null;
+    var okBase = function (x, y) {
+      return isFree(x, y, 8) && !inSafeZone(x, y) && dist(x, y, WORLD.safe.x, WORLD.safe.y) > CONFIG.SAFE_R + 40 &&
+        (!L || dist(x, y, L.x, L.y) > 100);
+    };
+    if (near) {
+      for (var i = 0; i < 60 && !p; i++) {
+        var a = rng() * Math.PI * 2, r = rand(rng, near.r0 || 20, near.r1 || 80);
+        var x = near.x + Math.cos(a) * r, y = near.y + Math.sin(a) * r;
+        if (okBase(x, y) && (!near.lawn || isLawn(x, y))) p = { x: x, y: y };
       }
     }
-    if (!p) {
-      p = randomPoint(rng, 8, function (x, y) {
-        return !inSafeZone(x, y) && dist(x, y, WORLD.safe.x, WORLD.safe.y) > CONFIG.SAFE_R + 40 && (!L || dist(x, y, L.x, L.y) > 120);
-      });
-    }
+    if (!p) p = randomPoint(rng, 8, okBase);
     return makeItem(kind, p.x, p.y);
+  }
+  function badPlan(rng) {
+    var chest = WORLD.trees.filter(function (t) { return t.type === 'chestnut'; });
+    var park = WORLD.trees.filter(function (t) { return t.x > 1440 && t.y > 1440 && t.type !== 'chestnut'; });
+    var k = WORLD.kiosk;
+    var plan = [];
+    chest.forEach(function (t) { for (var i = 0; i < 3; i++) plan.push({ kind: 'chestnut', near: { x: t.x, y: t.y, r0: 20, r1: 75 } }); });
+    for (var m = 0; m < 3; m++) { var t = pick(rng, park); plan.push({ kind: 'mushroom', near: { x: t.x, y: t.y, r0: 22, r1: 40, lawn: true } }); }
+    plan.push({ kind: 'wrapper', near: { x: k.x + 45, y: k.y + 110, r0: 30, r1: 120 } });
+    plan.push({ kind: 'wrapper', near: { x: k.x + 45, y: k.y + 110, r0: 30, r1: 120 } });
+    plan.push({ kind: 'chickenbone', near: { x: k.x + 45, y: k.y + 110, r0: 40, r1: 140 } });
+    plan.push({ kind: 'chickenbone', near: { x: 1215, y: 260, r0: 20, r1: 90 } });
+    plan.push({ kind: 'wrapper', near: { x: 1010, y: 1470, r0: 10, r1: 90 } });
+    plan.push({ kind: 'wrapper' });
+    plan.push({ kind: 'chickenbone' });
+    return plan;
   }
 
   function rollCharacter(size, rng) {
@@ -442,92 +649,137 @@
     return rng() < CONFIG.SMALL_GRUMPY_CHANCE ? 'grumpy' : 'friendly';
   }
 
-  function spawnPair(s, rng) {
+  function makeDog(breed, big, x, y, character) {
+    return { name: breed.name, look: breed.look, size: big ? 'big' : 'small', r: big ? 20 : 11, x: x, y: y,
+      character: character, state: 'leash', t: 0, progress: 0, friend: false, invited: false, warned: false, cooldown: 2,
+      facing: 1, phase: 0, speed: 0, wander: { x: x, y: y }, wanderT: 0, stuck: 0, yap: 0 };
+  }
+
+  function pickBreed(s, rng, big) {
     var used = s.pairs.map(function (p) { return p.dog.name; }).concat(s.pairNamesUsed);
-    var big = rng() < 0.45;
     var roster = (big ? BIG_DOGS : SMALL_DOGS).filter(function (d) { return used.indexOf(d.name) < 0; });
     if (!roster.length) roster = big ? BIG_DOGS : SMALL_DOGS;
     var breed = pick(rng, roster);
-    var route = pick(rng, WORLD.routes);
-    var start = route[0];
-    var owner = { x: start.x, y: start.y, r: CONFIG.OWNER_R, look: pick(rng, PEOPLE_LOOKS), facing: 1, phase: 0, speed: 0,
+    s.pairNamesUsed.push(breed.name);
+    return breed;
+  }
+
+  /** Пара «хозяин и собака». startNode - узел маршрута (по умолчанию калитка). */
+  function spawnPair(s, rng, startNode) {
+    var big = rng() < 0.45;
+    var breed = pickBreed(s, rng, big);
+    var start = startNode || pick(rng, GATES);
+    var route = makeRoute(rng, start);
+    var p0 = route[0];
+    var owner = { x: p0.x, y: p0.y, r: CONFIG.OWNER_R, look: pick(rng, PEOPLE_LOOKS), facing: 1, phase: 0, speed: 0,
       route: route, ni: 1, wait: 0, stuck: 0 };
-    var dog = { name: breed.name, look: breed.look, size: big ? 'big' : 'small', r: big ? 20 : 11,
-      x: start.x + 20, y: start.y - 20, character: rollCharacter(big ? 'big' : 'small', rng),
-      state: 'leash', t: 0, progress: 0, friend: false, invited: false, warned: false, cooldown: 2,
-      facing: 1, phase: 0, speed: 0, wander: { x: start.x, y: start.y }, wanderT: 0, stuck: 0 };
+    var dog = makeDog(breed, big, p0.x + 18, p0.y - 18, rollCharacter(big ? 'big' : 'small', rng));
     resolveCollisions(dog, dog.r);
     var pair = { id: nextId(), owner: owner, dog: dog, done: false };
     s.pairs.push(pair);
-    s.pairNamesUsed.push(breed.name);
+    return pair;
+  }
+
+  /** Собаки на собачьей площадке гуляют без поводка, хозяева стоят у калитки. */
+  function spawnDogParkPair(s, rng, i) {
+    var big = i === 0 ? rng() < 0.5 : rng() < 0.3;
+    var breed = pickBreed(s, rng, big);
+    var b = WORLD.dogParkBounds;
+    var owner = { x: b.x + 30, y: b.y + 230 + i * 70, r: CONFIG.OWNER_R, look: pick(rng, PEOPLE_LOOKS), facing: 1, phase: 0, speed: 0,
+      route: [], ni: 0, wait: 0, stuck: 0, stay: true };
+    var pos = randomPoint(rng, 12, function (x, y) { return inRect(x, y, b); });
+    var dog = makeDog(breed, big, pos.x, pos.y, 'friendly');
+    var pair = { id: nextId(), owner: owner, dog: dog, done: false, offLeash: true, area: b };
+    s.pairs.push(pair);
     return pair;
   }
 
   /**
-   * Новая прогулка. opts: { rain, wind, evening, owner } - чтобы задать погоду явно (тесты).
+   * Новая прогулка. opts: { wind, evening, owner } - чтобы задать погоду явно (тесты).
    */
   function createWalk(rng, opts) {
     rng = rng || Math.random;
     opts = opts || {};
     var evening = opts.evening !== undefined ? opts.evening : rng() < CONFIG.EVENING_CHANCE;
-    var rain = opts.rain !== undefined ? opts.rain : rng() < CONFIG.RAIN_CHANCE;
     var wind = opts.wind !== undefined ? opts.wind : rng() < CONFIG.WIND_CHANCE;
     var s = {
       t: 0, time: CONFIG.WALK_TIME, over: false, result: null,
-      weather: { rain: rain, wind: wind, evening: evening },
+      weather: { wind: wind, evening: evening, rain: false },
       louis: { x: WORLD.safe.x + 20, y: WORLD.safe.y + 36, r: CONFIG.LOUIS_R, facing: 1, phase: 0, speed: 0,
         running: false, panic: 0, act: null, sniff: 0, sniffCd: 0, carry: null, tempt: null, fear: 0,
-        dirty: false, inPuddle: false, jump: 0, leashMax: CONFIG.LEASH_MAX, taut: false, stuck: 0, temptT: 0 },
+        jump: 0, leashMax: CONFIG.LEASH_MAX, taut: false, stuck: 0, temptT: 0 },
       owner: { x: WORLD.safe.x - 14, y: WORLD.safe.y + 4, r: CONFIG.OWNER_R, look: opts.owner || pick(rng, OWNERS),
         facing: 1, phase: 0, speed: 0, act: null, stuck: 0, detour: 0, detourDir: 1 },
+      trail: [],
       meters: { pee: 0, poop: 0, energy: 0, happy: 0 },
       items: [], piles: [], pairs: [], pairNamesUsed: [], poops: [],
       marks: buildMarkSpots().map(function (m) { return { x: m.x, y: m.y, kind: m.kind, marked: false, sniffed: false, scent: rng() < CONFIG.SCENT_CHANCE }; }),
-      grandma: null, kids: [], janitor: null, flocks: [], cats: [],
+      sitters: [], kids: [], janitors: [], flocks: [], cats: [], ducks: [], court: null,
       nextPairAt: CONFIG.FIRST_PAIR_AT, windAt: wind ? rand(rng, CONFIG.WIND_INTERVAL[0], CONFIG.WIND_INTERVAL[1]) : Infinity,
-      chestnutAt: CONFIG.CHESTNUT_RESPAWN, playMult: 1, allDone: false, walked: 0, peeCd: 0, fuCalm: 0,
-      stats: { friends: [], treats: 0, fetches: 0, fu: 0, ateBad: 0, scares: 0, piles: 0, pigeons: 0, cats: 0, puddles: 0, marks: 0, pets: 0 }
+      chestnutAt: CONFIG.CHESTNUT_RESPAWN, kioskAt: CONFIG.KIOSK_DROP_TIME * 0.5, playMult: 1, allDone: false,
+      walked: 0, peeCd: 0, fuCalm: 0, duckCd: 0,
+      stats: { friends: [], treats: 0, fetches: 0, fu: 0, ateBad: 0, scares: 0, piles: 0, pigeons: 0, cats: 0, ducks: 0, marks: 0, pets: 0, goals: 0, hurdles: 0 }
     };
 
     // Вещи
     for (var i = 0; i < CONFIG.TREATS; i++) s.items.push(spawnTreat(s, rng));
-    var badKinds = ['chestnut', 'chestnut', 'chestnut', 'mushroom', 'wrapper', 'wrapper', 'chickenbone'];
-    for (var b = 0; b < CONFIG.BAD_ITEMS; b++) s.items.push(spawnBad(s, rng, badKinds[b % badKinds.length]));
-    s.items.push(makeItem('ball', 700, 620));
-    var stickTree = pick(rng, WORLD.trees.filter(function (t) { return t.type !== 'chestnut'; }));
-    var sp = randomPoint(rng, 10, function (x, y) { return dist(x, y, stickTree.x, stickTree.y) < 70 && isLawn(x, y); });
+    badPlan(rng).forEach(function (b) { s.items.push(spawnBad(s, rng, b.kind, b.near)); });
+    s.items.push(makeItem('ball', 1080, 1150));
+    s.items.push(makeItem('ball', 2150, 1060));
+    var parkTree = pick(rng, WORLD.trees.filter(function (t) { return t.x > 1440 && t.y > 1440 && t.type !== 'chestnut'; }));
+    var sp = randomPoint(rng, 10, function (x, y) { return dist(x, y, parkTree.x, parkTree.y) < 80 && isLawn(x, y); });
     s.items.push(makeItem('stick', sp.x, sp.y));
 
-    // Кучи листьев
-    s.piles = WORLD.piles.map(function (p) { return { x: p.x, y: p.y, size: rain ? 0.6 : 0.6 + rng() * 0.4 }; });
+    s.piles = WORLD.piles.map(function (p) { return { x: p.x, y: p.y, size: 0.65 + rng() * 0.35 }; });
 
     // Люди
-    if (!rain && rng() < (evening ? 0.5 : 0.9)) s.grandma = { x: 375, y: 197, cd: 0, progress: 0 };
-    var kidN = rain ? 0 : evening ? (rng() < 0.4 ? 1 : 0) : 1 + Math.floor(rng() * 2);
-    for (var k = 0; k < kidN; k++) {
-      var kp = randomPoint(rng, 10, function (x, y) { return inRect(x, y, WORLD.playgroundBounds); });
-      s.kids.push({ id: nextId(), x: kp.x, y: kp.y, r: 9, target: { x: kp.x, y: kp.y }, wait: rng() * 2, cd: 0, progress: 0,
-        facing: 1, phase: 0, speed: 0, look: k % 2 ? 'kidA' : 'kidB', stuck: 0 });
+    WORLD.sitters.forEach(function (st) {
+      var chance = st.kind === 'grandma' ? (evening ? 0.5 : 0.9) : (evening ? 0.4 : 0.8);
+      if (rng() < chance) s.sitters.push({ id: nextId(), kind: st.kind, look: st.look, x: st.x, y: st.y, spot: st.spot, cd: 0, progress: 0 });
+    });
+    var addKids = function (n, area, court) {
+      for (var k = 0; k < n; k++) {
+        var kp = randomPoint(rng, 10, function (x, y) { return inRect(x, y, area); });
+        s.kids.push({ id: nextId(), x: kp.x, y: kp.y, r: 9, target: { x: kp.x, y: kp.y }, wait: rng() * 2, cd: 0, progress: 0,
+          facing: 1, phase: 0, speed: 0, look: k % 2 ? 'kidA' : 'kidB', stuck: 0, area: area, court: court });
+      }
+    };
+    addKids(evening ? (rng() < 0.4 ? 1 : 0) : 1 + Math.floor(rng() * 2), WORLD.playgroundBounds, false);
+    var courtKids = evening ? (rng() < 0.5 ? 2 : 0) : 2 + Math.floor(rng() * 2);
+    addKids(courtKids, WORLD.courtBounds, true);
+    if (courtKids) {
+      var cb = WORLD.courtBounds;
+      s.court = { ball: { x: cb.x + cb.w / 2, y: cb.y + cb.h / 2, vx: 60, vy: 40 }, cd: 0, kickT: 1 };
     }
-    if (!rain && !evening) {
-      s.janitor = { x: 820, y: 330, r: 11, facing: 1, phase: 0, speed: 0, target: null, sweeping: false, wait: 0, stuck: 0 };
+    if (!evening) {
+      s.janitors.push({ x: 1000, y: 400, r: 11, facing: 1, phase: 0, speed: 0, target: null, sweeping: false, stuck: 0, region: { x: 0, y: 0, w: 1350, h: 1350 } });
+      s.janitors.push({ x: 1800, y: 1800, r: 11, facing: 1, phase: 0, speed: 0, target: null, sweeping: false, stuck: 0, region: { x: 1350, y: 1350, w: 1100, h: 1100 } });
     }
 
-    // Голуби и кошки
-    var flockN = rain ? 1 : 2;
+    // Голуби, кошки, утки
     var spots = WORLD.pigeonSpots.slice();
-    for (var f = 0; f < flockN; f++) {
-      var idx = Math.floor(rng() * spots.length), spot = spots.splice(idx, 1)[0];
+    for (var f = 0; f < 5; f++) {
+      var spot = spots.splice(Math.floor(rng() * spots.length), 1)[0];
       var birds = [];
-      for (var n = 0; n < 4 + Math.floor(rng() * 3); n++) birds.push({ ox: rand(rng, -22, 22), oy: rand(rng, -16, 16), ph: rng() * 6 });
+      for (var n = 0; n < 4 + Math.floor(rng() * 4); n++) birds.push({ ox: rand(rng, -24, 24), oy: rand(rng, -18, 18), ph: rng() * 6, dx: rand(rng, -1, 1), dy: rand(rng, -1, 1) });
       s.flocks.push({ id: nextId(), x: spot.x, y: spot.y, state: 'ground', t: 0, from: null, to: null, birds: birds, cd: 0 });
     }
-    var catN = rain ? 0 : 1 + (rng() < 0.4 ? 1 : 0);
-    for (var c = 0; c < catN; c++) {
-      var cs = WORLD.catSpots[c];
-      s.cats.push({ id: nextId(), x: cs.x, y: cs.y, z: 0, home: { x: cs.x, y: cs.y }, state: 'sit', t: 0, perch: null,
-        facing: -1, phase: 0, speed: 0, color: c ? 'ginger' : 'gray', rewarded: false });
+    WORLD.catSpots.forEach(function (cs, c) {
+      if (rng() < 0.75) s.cats.push({ id: nextId(), x: cs.x, y: cs.y, z: 0, home: { x: cs.x, y: cs.y }, state: 'sit', t: 0, perch: null,
+        facing: -1, phase: 0, speed: 0, color: c % 2 ? 'ginger' : 'gray' });
+    });
+    var pond = WORLD.ponds[0];
+    for (var dk = 0; dk < 5; dk++) {
+      var a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * 0.7;
+      var dx = pond.x + Math.cos(a) * pond.rx * rr, dy = pond.y + Math.sin(a) * pond.ry * rr;
+      s.ducks.push({ id: nextId(), x: dx, y: dy, tx: dx, ty: dy, ph: rng() * 6, facing: 1, calm: rng() * 3 });
     }
+
+    // Соседи: двое уже гуляют, двое на собачьей площадке
+    var inner = Object.keys(WORLD.nodes).filter(function (k) { return !WORLD.nodes[k].gate && k !== 'q1a' && k !== 'q1c'; });
+    for (var pp = 0; pp < CONFIG.START_PAIRS; pp++) spawnPair(s, rng, pick(rng, inner));
+    spawnDogParkPair(s, rng, 0);
+    spawnDogParkPair(s, rng, 1);
     return s;
   }
 
@@ -636,9 +888,20 @@
   }
 
   /* ------------------------------ хозяин ------------------------------ */
+  /** Хозяин идёт по следу Луи: так он обходит заборы и машины там же, где прошёл Луи. */
+  function recordTrail(s) {
+    var L = s.louis, tr = s.trail, last = tr[tr.length - 1];
+    if (!last || d2(L, last) > 14) {
+      if (last && d2(L, last) > 200) tr.length = 0;
+      tr.push({ x: L.x, y: L.y });
+      if (tr.length > 300) tr.shift();
+    }
+  }
+
   function stepOwner(s, dt, events) {
     var O = s.owner, L = s.louis, C = CONFIG;
     var moved = 0;
+    recordTrail(s);
     if (O.act && O.act.type === 'pickup') {
       var p = O.act.target;
       if (d2(O, p) > 16) moved = steerOwner(O, p.x, p.y, C.OWNER_SPEED, dt);
@@ -658,7 +921,14 @@
       if (!L.act && d > C.LEASH_SLACK) {
         var hurry = L.panic > 0 || d > L.leashMax * 0.8;
         var sp = hurry ? C.OWNER_HURRY_SPEED : C.OWNER_SPEED * Math.min(1.6, 0.6 + (d - C.LEASH_SLACK) / 80);
-        moved = steerOwner(O, L.x, L.y, sp, dt);
+        var tr = s.trail;
+        while (tr.length > 1 && d2(O, tr[0]) < 16) tr.shift();
+        // Точки следа, до которых хозяин уже ближе, чем до Луи по прямой, можно пропустить
+        while (tr.length > 1 && d2(O, tr[1]) < d2(O, tr[0])) tr.shift();
+        var target = tr.length ? tr[0] : L;
+        moved = steerOwner(O, target.x, target.y, sp, dt);
+      } else if (d <= C.LEASH_SLACK * 0.8) {
+        s.trail = [{ x: L.x, y: L.y }];
       }
     }
     O.speed = dt > 0 ? moved / dt : 0;
@@ -692,21 +962,22 @@
     for (var i = 0; i < s.marks.length; i++) {
       var m = s.marks[i];
       if (m.marked || m.sniffed) continue;
+      if (Math.abs(m.x - L.x) > bd || Math.abs(m.y - L.y) > bd) continue;
       var d = d2(L, m);
       if (d < bd) { bd = d; best = m; }
     }
     return best;
   }
 
-  /** Можно ли сейчас покакать: нагулялся, на газоне и рядом никого чужого. */
+  /** Можно ли сейчас покакать: нагулялся, на траве и рядом никого чужого. */
   function poopReady(s) {
     var L = s.louis, C = CONFIG;
-    if (s.meters.poop >= 100 || s.walked < C.POOP_READY_WALK || !isLawn(L.x, L.y)) return false;
+    if (s.meters.poop >= 100 || s.walked < C.POOP_READY_WALK || !isPoopGround(L.x, L.y)) return false;
     var R = C.POOP_PRIVACY_R;
     var crowd = s.pairs.some(function (p) { return d2(p.dog, L) < R || d2(p.owner, L) < R; }) ||
       s.kids.some(function (k) { return d2(k, L) < R; }) ||
-      (s.janitor && d2(s.janitor, L) < R) ||
-      (s.grandma && d2(s.grandma, L) < R);
+      s.janitors.some(function (j) { return d2(j, L) < R; }) ||
+      s.sitters.some(function (st) { return d2(st, L) < R; });
     return !crowd;
   }
 
@@ -755,7 +1026,6 @@
     var L = s.louis, O = s.owner, C = CONFIG;
     var reveal = L.sniff > 0 ? C.SNIFF_REVEAL_R : C.REVEAL_R;
     if (s.fuCalm > 0) s.fuCalm -= dt;
-
     if (L.tempt && (s.items.indexOf(L.tempt) < 0 || d2(L, L.tempt) > C.TEMPT_R * 1.5 || L.panic > 0)) L.tempt = null;
 
     for (var i = s.items.length - 1; i >= 0; i--) {
@@ -770,6 +1040,7 @@
         continue;
       }
       if (it.state !== 'ground') continue;
+      if (Math.abs(it.x - L.x) > reveal + 10 || Math.abs(it.y - L.y) > reveal + 10) continue;
       var d = d2(L, it);
       if (d < reveal) it.revealed = true;
       if (L.panic > 0 || L.act) continue;
@@ -794,7 +1065,7 @@
           addMeter(s, 'happy', C.ITEMS[it.kind].happy);
           s.stats.treats++;
           events.push({ type: 'treat', kind: it.kind, x: it.x, y: it.y });
-          s.items.push(spawnTreat(s, rng));
+          if (!it.kiosk) s.items.push(spawnTreat(s, rng));
         }
       } else if (it.group === 'toy') {
         if (!L.carry && d < C.PICKUP_R + 4) {
@@ -822,10 +1093,13 @@
           s.items.splice(s.items.indexOf(toy), 1);
           events.push({ type: 'pocket', kind: toy.kind, x: O.x, y: O.y });
         } else {
-          var target = randomPoint(rng, 10, function (x, y) {
-            var dd = dist(x, y, O.x, O.y);
-            return dd > C.THROW_MIN && dd < Math.min(C.THROW_MAX, C.LEASH_MAX * 0.9) && !inSafeZone(x, y);
-          });
+          var target = null;
+          for (var tries = 0; tries < 60 && !target; tries++) {
+            var ang = rng() * Math.PI * 2, rad = rand(rng, C.THROW_MIN, Math.min(C.THROW_MAX, C.LEASH_MAX * 0.9));
+            var tx = O.x + Math.cos(ang) * rad, ty = O.y + Math.sin(ang) * rad;
+            if (isFree(tx, ty, 10) && !inSafeZone(tx, ty) && !inWater(tx, ty)) target = { x: tx, y: ty };
+          }
+          if (!target) target = { x: L.x, y: L.y };
           toy.state = 'flying';
           toy.from = { x: O.x, y: O.y };
           toy.to = target;
@@ -841,14 +1115,27 @@
     s.chestnutAt -= dt;
     if (s.chestnutAt <= 0) {
       s.chestnutAt = C.CHESTNUT_RESPAWN;
-      var n = s.items.filter(function (x) { return x.kind === 'chestnut'; }).length;
-      if (n < 4) s.items.push(spawnBad(s, rng, 'chestnut'));
+      if (s.items.filter(function (x) { return x.kind === 'chestnut'; }).length < 6) {
+        var t = pick(rng, WORLD.trees.filter(function (x) { return x.type === 'chestnut'; }));
+        s.items.push(spawnBad(s, rng, 'chestnut', { x: t.x, y: t.y, r0: 20, r1: 75 }));
+      }
+    }
+    // Ларёк: продавец бросает кусочек
+    s.kioskAt -= dt;
+    if (s.kioskAt <= 0) {
+      s.kioskAt = C.KIOSK_DROP_TIME;
+      var kd = WORLD.kiosk.drop;
+      if (!s.items.some(function (x) { return x.kiosk; })) {
+        s.items.push(makeItem(rng() < 0.6 ? 'sausage' : 'biscuit', kd.x + rand(rng, -20, 20), kd.y + rand(rng, 0, 20), { kiosk: true, revealed: true }));
+        events.push({ type: 'kiosk', x: kd.x, y: kd.y });
+      }
     }
   }
 
   /* ------------------------------ чужие собаки ------------------------------ */
   function stepPairOwner(pair, s, dt) {
     var o = pair.owner, dog = pair.dog;
+    if (o.stay) { o.speed = 0; o.facing = 1; return; }
     var holding = dog.state === 'greet' || dog.state === 'sniff' || dog.state === 'play' || dog.state === 'alert' || dog.state === 'chase' || dog.state === 'return';
     var moved = 0;
     if (!holding) {
@@ -864,7 +1151,6 @@
         }
       }
     } else if (dog.state === 'play') {
-      // Пока собаки играют, хозяин потихоньку идёт за своей
       if (d2(o, dog) > CONFIG.DOG_LEASH * 0.7) moved = moveToward(o, dog.x, dog.y, CONFIG.PAIR_WALK_SPEED, dt);
     }
     o.speed = dt > 0 ? moved / dt : 0;
@@ -906,6 +1192,8 @@
         dog.t -= dt;
         moved = moveToward(dog, L.x, L.y, d > 40 ? 200 : 60, dt);
         if (dog.t <= 0) { dog.state = 'leash'; ev('playEnd'); }
+      } else if (dog.state === 'leash' && dog.friend && pair.offLeash && d < 120 && L.running) {
+        dog.state = 'play'; dog.t = 3; // на площадке друг снова играет, если Луи бегает рядом
       }
     } else if (dog.character === 'angry') {
       if (!dog.warned && d < C.WARN_R && dog.state === 'leash') { dog.warned = true; ev('warn'); }
@@ -950,22 +1238,34 @@
       if (dog.yap > 0) { dog.yap -= dt; setFacing(dog, L.x - dog.x, L.y - dog.y); moved = moveToward(dog, L.x, L.y, 70, dt); }
     }
 
-    // На поводке гуляет вокруг хозяина
+    // Гуляет вокруг хозяина или бегает по площадке
     if (dog.state === 'leash' && !(dog.yap > 0)) {
       dog.wanderT -= dt;
       if (dog.wanderT <= 0 || d2(dog, dog.wander) < 6) {
-        var a = rng() * Math.PI * 2, r = rng() * C.DOG_LEASH * 0.8;
-        dog.wander = { x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r };
-        dog.wanderT = 1.5 + rng() * 2;
+        if (pair.offLeash) {
+          var ar = pair.area;
+          dog.wander = { x: ar.x + 20 + rng() * (ar.w - 40), y: ar.y + 20 + rng() * (ar.h - 40) };
+          dog.wanderT = 1.5 + rng() * 2.5;
+        } else {
+          var a = rng() * Math.PI * 2, r = rng() * C.DOG_LEASH * 0.8;
+          dog.wander = { x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r };
+          dog.wanderT = 1.5 + rng() * 2;
+        }
       }
-      var target = { x: dog.wander.x + (o.speed > 5 ? (o.route[o.ni] || o).x - o.x : 0) * 0.15, y: dog.wander.y + (o.speed > 5 ? (o.route[o.ni] || o).y - o.y : 0) * 0.15 };
-      moved = moveToward(dog, target.x, target.y, Math.max(45, o.speed * 1.4), dt);
+      var next = o.route && o.route[o.ni];
+      var lead = !pair.offLeash && o.speed > 5 && next;
+      var target = { x: dog.wander.x + (lead ? (next.x - o.x) * 0.15 : 0), y: dog.wander.y + (lead ? (next.y - o.y) * 0.15 : 0) };
+      moved = moveToward(dog, target.x, target.y, pair.offLeash ? 110 : Math.max(45, o.speed * 1.4), dt);
     }
-    if (dog.state !== 'chase' && dog.state !== 'return') leashDog(dog, o);
+    if (pair.offLeash) {
+      var b = pair.area;
+      dog.x = clamp(dog.x, b.x + dog.r, b.x + b.w - dog.r);
+      dog.y = clamp(dog.y, b.y + dog.r, b.y + b.h - dog.r);
+    } else if (dog.state !== 'chase' && dog.state !== 'return') leashDog(dog, o);
     dog.speed = dt > 0 ? moved / dt : 0;
   }
 
-  /* ------------------------------ люди и звери ------------------------------ */
+  /* ------------------------------ люди ------------------------------ */
   function petCheck(person, s, dt, cooldownTime, happyValue, events, type) {
     var L = s.louis, C = CONFIG;
     if (person.cd > 0) { person.cd -= dt; return; }
@@ -986,20 +1286,30 @@
 
   function stepPeople(s, dt, rng, events) {
     var L = s.louis, C = CONFIG;
-    if (s.grandma) {
-      s.grandma.spot = WORLD.grandmaSpot;
-      petCheck(s.grandma, s, dt, C.GRANDMA_COOLDOWN, C.HAPPY_GRANDMA, events, 'grandma');
-    }
+    s.sitters.forEach(function (st) {
+      if (st.kind === 'grandma') petCheck(st, s, dt, C.GRANDMA_COOLDOWN, C.HAPPY_GRANDMA, events, 'grandma');
+      else petCheck(st, s, dt, C.SITTER_COOLDOWN, C.HAPPY_SITTER, events, 'sitter');
+    });
+    var ball = s.court && s.court.ball;
     s.kids.forEach(function (kid) {
       var moved = 0;
       var d = d2(kid, L);
       if (kid.cd <= 0 && d < C.KID_RUN_R && d > C.PET_R * 0.6 && L.panic <= 0) moved = moveToward(kid, L.x, L.y, 75, dt);
-      else {
+      else if (kid.court && ball) {
+        // Дети на спортплощадке бегают за мячом
+        var nearest = s.kids.filter(function (k) { return k.court; }).sort(function (a, b) { return d2(a, ball) - d2(b, ball); })[0];
+        if (nearest === kid) moved = moveToward(kid, ball.x, ball.y, 70, dt);
+        else if (kid.wait > 0) kid.wait -= dt;
+        else {
+          moved = moveToward(kid, kid.target.x, kid.target.y, 40, dt);
+          if (d2(kid, kid.target) < 6 || kid.stuck > 1) { kid.target = randomPoint(rng, 10, function (x, y) { return inRect(x, y, kid.area); }); kid.wait = 1 + rng() * 2; }
+        }
+      } else {
         if (kid.wait > 0) kid.wait -= dt;
         else {
           moved = moveToward(kid, kid.target.x, kid.target.y, 40, dt);
           if (d2(kid, kid.target) < 6 || kid.stuck > 1) {
-            kid.target = randomPoint(rng, 10, function (x, y) { return inRect(x, y, WORLD.playgroundBounds); });
+            kid.target = randomPoint(rng, 10, function (x, y) { return inRect(x, y, kid.area); });
             kid.wait = 1 + rng() * 3;
           }
         }
@@ -1007,18 +1317,18 @@
       kid.speed = dt > 0 ? moved / dt : 0;
       petCheck(kid, s, dt, C.KID_COOLDOWN, C.HAPPY_KID, events, 'kid');
     });
+    stepCourtBall(s, dt, rng, events);
 
-    // Дворник сгребает листья
-    var J = s.janitor;
-    if (J) {
+    // Дворники сгребают листья в своих кварталах
+    s.janitors.forEach(function (J) {
       var moved = 0;
       J.sweeping = false;
       if (!J.target || J.target.size >= 1) {
-        var low = s.piles.filter(function (p) { return p.size < 0.8; });
+        var low = s.piles.filter(function (p) { return p.size < 0.8 && inRect(p.x, p.y, J.region); });
         J.target = low.length ? low.sort(function (a, b) { return d2(J, a) - d2(J, b); })[0] : null;
       }
       if (J.target) {
-        var spot = { x: J.target.x + 22, y: J.target.y + 10 };
+        var spot = { x: J.target.x + 26, y: J.target.y + 12 };
         if (d2(J, spot) > 8 && J.stuck < 2) moved = moveToward(J, spot.x, spot.y, C.JANITOR_SPEED, dt);
         else {
           J.sweeping = true; J.stuck = 0;
@@ -1027,17 +1337,55 @@
         }
       }
       J.speed = dt > 0 ? moved / dt : 0;
-    }
+    });
   }
 
+  function stepCourtBall(s, dt, rng, events) {
+    var court = s.court;
+    if (!court) return;
+    var b = court.ball, cb = WORLD.courtBounds, L = s.louis, C = CONFIG;
+    if (court.cd > 0) court.cd -= dt;
+    // Пинают дети
+    s.kids.forEach(function (k) {
+      if (k.court && d2(k, b) < 14 && Math.hypot(b.vx, b.vy) < 50) {
+        var tx = cb.x + 30 + rng() * (cb.w - 60), ty = cb.y + 30 + rng() * (cb.h - 60);
+        var l = dist(tx, ty, b.x, b.y) || 1;
+        b.vx = (tx - b.x) / l * 170; b.vy = (ty - b.y) / l * 170;
+      }
+    });
+    // Пинает Луи
+    if (d2(L, b) < L.r + 7 && L.speed > 30) {
+      var dx = b.x - L.x, dy = b.y - L.y, dl = Math.sqrt(dx * dx + dy * dy) || 1;
+      var v = Math.max(150, L.speed * 1.3);
+      b.vx = dx / dl * v; b.vy = dy / dl * v;
+      if (L.running && court.cd <= 0) {
+        court.cd = C.COURT_BALL_COOLDOWN;
+        addMeter(s, 'energy', C.ENERGY_COURT_BALL);
+        addMeter(s, 'happy', C.HAPPY_COURT_BALL);
+        s.stats.goals++;
+        events.push({ type: 'courtBall', x: b.x, y: b.y });
+      }
+    }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    var f = Math.max(0, 1 - 1.3 * dt);
+    b.vx *= f; b.vy *= f;
+    if (b.x < cb.x) { b.x = cb.x; b.vx = Math.abs(b.vx); } else if (b.x > cb.x + cb.w) { b.x = cb.x + cb.w; b.vx = -Math.abs(b.vx); }
+    if (b.y < cb.y) { b.y = cb.y; b.vy = Math.abs(b.vy); } else if (b.y > cb.y + cb.h) { b.y = cb.y + cb.h; b.vy = -Math.abs(b.vy); }
+  }
+
+  /* ------------------------------ звери ------------------------------ */
   function stepAnimals(s, dt, rng, events) {
     var L = s.louis, C = CONFIG;
     s.flocks.forEach(function (f) {
       if (f.state === 'ground') {
         if (f.cd > 0) f.cd -= dt;
-        if (d2(L, f) < C.PIGEON_FLEE_R && L.speed > 50 && f.cd <= 0) {
-          var others = WORLD.pigeonSpots.filter(function (p) { return dist(p.x, p.y, f.x, f.y) > 50; });
-          f.state = 'fly'; f.t = 0; f.from = { x: f.x, y: f.y }; f.to = pick(rng, others);
+        var d = d2(L, f);
+        // Взлетают сразу, как Луи подошёл, даже шагом
+        if (f.cd <= 0 && d < C.PIGEON_FLEE_R && (L.speed > 15 || d < 50) && L.panic <= 0) {
+          var others = WORLD.pigeonSpots.filter(function (p) { return dist(p.x, p.y, f.x, f.y) > 300; });
+          others.sort(function (a, b) { return d2(a, f) - d2(b, f); });
+          f.state = 'fly'; f.t = 0; f.from = { x: f.x, y: f.y }; f.to = pick(rng, others.slice(0, 3));
+          f.away = { x: f.x - L.x, y: f.y - L.y };
           s.stats.pigeons++;
           if (L.running) { addMeter(s, 'energy', C.ENERGY_PIGEONS); addMeter(s, 'happy', C.HAPPY_PIGEONS); }
           events.push({ type: 'pigeons', x: f.x, y: f.y, chased: L.running });
@@ -1045,8 +1393,9 @@
       } else {
         f.t += dt;
         var k = Math.min(1, f.t / C.PIGEON_FLY_TIME);
-        f.x = f.from.x + (f.to.x - f.from.x) * k;
-        f.y = f.from.y + (f.to.y - f.from.y) * k;
+        var e = k * k * (3 - 2 * k);
+        f.x = f.from.x + (f.to.x - f.from.x) * e;
+        f.y = f.from.y + (f.to.y - f.from.y) * e;
         if (k >= 1) { f.state = 'ground'; f.cd = 3; }
       }
     });
@@ -1055,12 +1404,11 @@
       var moved = 0;
       if (c.state === 'sit') {
         if (d2(L, c) < C.CAT_FLEE_R && L.panic <= 0) {
-          var cars = WORLD.solids.filter(function (x) { return x.kind === 'car'; });
-          var car = cars.sort(function (a, b) { return dist(a.x + 30, a.y + 50, c.x, c.y) - dist(b.x + 30, b.y + 50, c.x, c.y); })[0];
-          c.perch = { x: car.x + car.w / 2, y: car.y + car.h / 2 };
+          var perches = WORLD.solids.filter(function (x) { return x.kind === 'car' || x.kind === 'garages'; });
+          var best = perches.sort(function (a, b) { return dist(a.x + a.w / 2, a.y + a.h / 2, c.x, c.y) - dist(b.x + b.w / 2, b.y + b.h / 2, c.x, c.y); })[0];
+          c.perch = { x: best.x + best.w / 2 + (best.kind === 'garages' ? clamp(c.x - (best.x + best.w / 2), -best.w / 2 + 20, best.w / 2 - 20) : 0), y: best.y + best.h / 2, z: best.kind === 'garages' ? 48 : 36 };
           c.state = 'flee';
-          c.rewarded = false;
-          if (L.running) { c.rewarded = true; addMeter(s, 'energy', C.ENERGY_CAT); addMeter(s, 'happy', C.HAPPY_CAT); }
+          if (L.running) { addMeter(s, 'energy', C.ENERGY_CAT); addMeter(s, 'happy', C.HAPPY_CAT); }
           s.stats.cats++;
           events.push({ type: 'cat', x: c.x, y: c.y, chased: L.running });
         }
@@ -1068,8 +1416,8 @@
         var dx = c.perch.x - c.x, dy = c.perch.y - c.y, l = Math.sqrt(dx * dx + dy * dy);
         var step = Math.min(l, C.CAT_SPEED * dt);
         if (l > 1) { c.x += dx / l * step; c.y += dy / l * step; moved = step; setFacing(c, dx, dy); }
-        c.z = Math.max(0, 1 - l / 40) * 36;
-        if (l < 2) { c.state = 'perch'; c.t = C.CAT_PERCH_TIME; c.z = 36; }
+        c.z = Math.max(0, 1 - l / 40) * c.perch.z;
+        if (l < 2) { c.state = 'perch'; c.t = C.CAT_PERCH_TIME; c.z = c.perch.z; }
       } else if (c.state === 'perch') {
         c.t -= dt;
         if (c.t <= 0 && d2(L, c) > C.CAT_FLEE_R * 1.3) { c.state = 'down'; c.z = 0; }
@@ -1081,12 +1429,47 @@
       c.phase += moved * 0.2;
       c.speed = dt > 0 ? moved / dt : 0;
     });
+
+    // Утки уплывают от Луи на другой край пруда
+    var pond = WORLD.ponds[0];
+    if (s.duckCd > 0) s.duckCd -= dt;
+    var scared = false;
+    if (s.duckCd <= 0 && L.speed > 50 && L.panic <= 0) {
+      scared = s.ducks.some(function (dk) { return d2(dk, L) < C.DUCK_SCARE_R; });
+    }
+    if (scared) {
+      s.duckCd = C.DUCK_COOLDOWN;
+      s.stats.ducks++;
+      if (L.running) { addMeter(s, 'energy', C.ENERGY_DUCKS); addMeter(s, 'happy', C.HAPPY_DUCKS); }
+      var ax = pond.x - L.x, ay = pond.y - L.y, al = Math.sqrt(ax * ax + ay * ay) || 1;
+      s.ducks.forEach(function (dk) {
+        dk.tx = pond.x + ax / al * pond.rx * 0.55 + rand(rng, -40, 40);
+        dk.ty = pond.y + ay / al * pond.ry * 0.55 + rand(rng, -30, 30);
+      });
+      events.push({ type: 'ducks', x: s.ducks[0].x, y: s.ducks[0].y, chased: L.running });
+    }
+    s.ducks.forEach(function (dk) {
+      dk.calm -= dt;
+      if (dk.calm <= 0 && d2(dk, { x: dk.tx, y: dk.ty }) < 5) {
+        var a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * 0.65;
+        dk.tx = pond.x + Math.cos(a) * pond.rx * r; dk.ty = pond.y + Math.sin(a) * pond.ry * r;
+        dk.calm = 2 + rng() * 4;
+      }
+      var dx = dk.tx - dk.x, dy = dk.ty - dk.y, l = Math.sqrt(dx * dx + dy * dy);
+      if (l > 1) {
+        var sp = s.duckCd > C.DUCK_COOLDOWN - 2 ? 90 : 18;
+        var st = Math.min(l, sp * dt);
+        dk.x += dx / l * st; dk.y += dy / l * st;
+        setFacing(dk, dx, dy);
+      }
+    });
   }
 
-  function stepPilesAndPuddles(s, dt, rng, events) {
+  function stepPilesAndHurdles(s, dt, rng, events) {
     var L = s.louis, C = CONFIG;
     s.piles.forEach(function (p) {
       if (p.size < C.PILE_MIN_SIZE || L.act || L.panic > 0) return;
+      if (Math.abs(p.x - L.x) > 60 || Math.abs(p.y - L.y) > 60) return;
       if (d2(L, p) < C.PILE_R * (0.6 + p.size * 0.4) + L.r * 0.5 && L.speed > C.PILE_JUMP_SPEED) {
         var size = p.size;
         p.size = 0;
@@ -1095,10 +1478,23 @@
         addMeter(s, 'happy', C.HAPPY_PILE);
         s.stats.piles++;
         events.push({ type: 'pile', x: p.x, y: p.y, size: size });
-        if (s.janitor && d2(s.janitor, p) < C.SCOLD_R) {
+        var J = s.janitors.filter(function (j) { return d2(j, p) < C.SCOLD_R; })[0];
+        if (J) {
           addMeter(s, 'happy', C.HAPPY_SCOLD);
-          events.push({ type: 'scold', x: s.janitor.x, y: s.janitor.y });
+          events.push({ type: 'scold', x: J.x, y: J.y, janitor: s.janitors.indexOf(J) });
         }
+      }
+    });
+    // Барьеры на собачьей площадке
+    WORLD.hurdles.forEach(function (h, i) {
+      s.hurdleCd = s.hurdleCd || {};
+      if (s.hurdleCd[i] > 0) { s.hurdleCd[i] -= dt; return; }
+      if (L.running && L.panic <= 0 && inRect(L.x, L.y, { x: h.x - 6, y: h.y, w: h.w + 12, h: h.h })) {
+        s.hurdleCd[i] = C.HURDLE_COOLDOWN;
+        L.jump = 0.5;
+        addMeter(s, 'energy', C.ENERGY_HURDLE);
+        s.stats.hurdles++;
+        events.push({ type: 'hurdle', x: L.x, y: L.y });
       }
     });
     if (s.weather.wind) {
@@ -1108,19 +1504,6 @@
         s.piles.forEach(function (p) { p.size = Math.max(0, p.size - C.WIND_PILE_LOSS); });
         events.push({ type: 'wind' });
       }
-    }
-    if (s.weather.rain) {
-      var inside = WORLD.puddles.some(function (q) {
-        var nx = (L.x - q.x) / q.rx, ny = (L.y - q.y) / q.ry;
-        return nx * nx + ny * ny < 1;
-      });
-      if (inside && !L.inPuddle) {
-        L.inPuddle = true;
-        L.dirty = true;
-        addMeter(s, 'energy', C.ENERGY_PUDDLE);
-        s.stats.puddles++;
-        events.push({ type: 'puddle', x: L.x, y: L.y, first: s.stats.puddles === 1 });
-      } else if (!inside) L.inPuddle = false;
     }
   }
 
@@ -1164,10 +1547,9 @@
     stepItems(s, dt, rng, events);
     stepToilet(s, dt, moving, events);
 
-    // Пары с собаками
     if (s.t >= s.nextPairAt) {
       s.nextPairAt = s.t + rand(rng, C.PAIR_INTERVAL[0], C.PAIR_INTERVAL[1]);
-      if (s.pairs.length < C.MAX_PAIRS) {
+      if (s.pairs.filter(function (p) { return !p.offLeash; }).length < C.MAX_PAIRS) {
         var p = spawnPair(s, rng);
         events.push({ type: 'pairEnter', name: p.dog.name, size: p.dog.size, character: p.dog.character, x: p.owner.x, y: p.owner.y });
       }
@@ -1182,7 +1564,7 @@
 
     stepPeople(s, dt, rng, events);
     stepAnimals(s, dt, rng, events);
-    stepPilesAndPuddles(s, dt, rng, events);
+    stepPilesAndHurdles(s, dt, rng, events);
 
     var fearTarget = computeFear(s);
     L.fear += (fearTarget - L.fear) * Math.min(1, dt * 4);
@@ -1200,14 +1582,14 @@
     return events;
   }
 
-  /** Двор без Луи: соседи, звери и дворник живут сами (фон меню). */
+  /** Район без Луи: соседи, звери и дворники живут сами (фон меню). */
   function stepAmbient(s, dt, rng) {
     rng = rng || Math.random;
     var events = [];
     s.t += dt;
     if (s.t >= s.nextPairAt) {
-      s.nextPairAt = s.t + rand(rng, CONFIG.PAIR_INTERVAL[0] * 0.5, CONFIG.PAIR_INTERVAL[1] * 0.5);
-      if (s.pairs.length < CONFIG.MAX_PAIRS) spawnPair(s, rng);
+      s.nextPairAt = s.t + rand(rng, CONFIG.PAIR_INTERVAL[0], CONFIG.PAIR_INTERVAL[1]);
+      if (s.pairs.filter(function (p) { return !p.offLeash; }).length < CONFIG.MAX_PAIRS) spawnPair(s, rng);
     }
     s.pairs.forEach(function (pair) { stepPairOwner(pair, s, dt); stepPairDog(pair, s, dt, rng, events); });
     s.pairs = s.pairs.filter(function (p) { return !p.done; });
@@ -1229,7 +1611,7 @@
     var score = reason === 'quit' ? 0 : Math.max(0, meterScore + timeBonus + extra);
     return {
       reason: reason, done: done, count: count, stars: stars, score: score,
-      meterScore: meterScore, timeBonus: timeBonus, dirty: s.louis.dirty,
+      meterScore: meterScore, timeBonus: timeBonus,
       meters: { pee: Math.round(m.pee), poop: Math.round(m.poop), energy: Math.round(m.energy), happy: Math.round(m.happy) },
       friends: s.stats.friends.slice(), stats: JSON.parse(JSON.stringify(s.stats)), weather: s.weather, timeLeft: Math.round(s.time)
     };
@@ -1267,11 +1649,12 @@
 
   return {
     CONFIG: CONFIG, WORLD: WORLD, ISO: ISO, STORAGE_KEY: STORAGE_KEY, BIG_DOGS: BIG_DOGS, SMALL_DOGS: SMALL_DOGS,
-    clamp: clamp, dist: dist, toWorldDir: toWorldDir, toScreenDir: toScreenDir,
-    inSafeZone: inSafeZone, isLawn: isLawn, isFree: isFree, moveEntity: moveEntity, randomPoint: randomPoint,
-    resolveCollisions: resolveCollisions, keepOutOfSafeZone: keepOutOfSafeZone,
-    createWalk: createWalk, spawnPair: spawnPair, stepWalk: stepWalk, stepAmbient: stepAmbient, trySniff: trySniff, sayFu: sayFu,
-    computeFear: computeFear, currentWish: currentWish, poopReady: poopReady, finishWalk: finishWalk, buildMarkSpots: buildMarkSpots,
+    clamp: clamp, dist: dist, toWorldDir: toWorldDir, toScreenDir: toScreenDir, mulberry32: mulberry32,
+    inSafeZone: inSafeZone, isLawn: isLawn, isPoopGround: isPoopGround, inWater: inWater, isFree: isFree,
+    moveEntity: moveEntity, randomPoint: randomPoint, resolveCollisions: resolveCollisions, keepOutOfSafeZone: keepOutOfSafeZone,
+    makeRoute: makeRoute, createWalk: createWalk, spawnPair: spawnPair, stepWalk: stepWalk, stepAmbient: stepAmbient,
+    trySniff: trySniff, sayFu: sayFu, computeFear: computeFear, currentWish: currentWish, poopReady: poopReady,
+    finishWalk: finishWalk, buildMarkSpots: buildMarkSpots,
     emptyProgress: emptyProgress, loadProgress: loadProgress, saveProgress: saveProgress, recordWalk: recordWalk,
     allDogNames: allDogNames
   };

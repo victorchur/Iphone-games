@@ -2,7 +2,7 @@
  * Он обслуживает только файлы меню. У каждой игры свой воркер в её папке,
  * поэтому запросы к играм здесь не перехватываются. */
 const CACHE_PREFIX = 'hub-';
-const CACHE_NAME = CACHE_PREFIX + 'v2';
+const CACHE_NAME = CACHE_PREFIX + 'v3';
 const LEGACY_CACHES = ['neon-runner-v1']; // кэш старой версии, когда Neon Runner жил на корне
 const ASSETS = [
   './',

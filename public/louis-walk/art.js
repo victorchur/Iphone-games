@@ -130,7 +130,7 @@
 
   /**
    * Луи сбоку, смотрит вправо (facing -1 отражает).
-   * o: { facing, phase, moving 0..1, t, pose, expr, dirty, carry, jump }
+   * o: { facing, phase, moving 0..1, t, pose, expr, carry, jump }
    * pose: stand | walk | run | sniff | pee | squat
    * Возвращает точку крепления поводка на шлейке в экранных координатах.
    */
@@ -160,7 +160,6 @@
       c.fillStyle = color;
       rr(c, -2.7, -1, 5.4, len, 2.7); c.fill();
       ellipse(c, 0.6, len - 1.4, 3.4, 2.2); c.fill();
-      if (o.dirty) { c.fillStyle = 'rgba(70,45,25,0.85)'; ellipse(c, 0.6, len - 1.6, 3.2, 2); c.fill(); }
       c.restore();
     };
 
@@ -184,7 +183,6 @@
 
     // Тело
     fluff(c, 0, -18 + bob, 13.5, 8.2, CURLS.body, 2, fur, outline);
-    if (o.dirty) { c.fillStyle = 'rgba(80,52,30,0.5)'; ellipse(c, 2, -12 + bob, 8, 2.4); c.fill(); }
 
     // Коричневая шлейка
     c.strokeStyle = C.harness; c.lineWidth = 2.4; c.lineCap = 'round';
@@ -445,9 +443,11 @@
     c.fillStyle = '#5fa58c'; ellipse(c, 3.6, -6.4, 1.6, 1.2); c.fill();
     c.fillStyle = '#e67e22'; c.beginPath(); c.moveTo(7.5, -8.6); c.lineTo(9.5, -8); c.lineTo(7.5, -7.6); c.fill();
     if (o.flying) {
-      const f = Math.sin(o.t * 30 + o.ph) * 6;
+      const f = Math.sin(o.t * 34 + o.ph) * 7;
       c.fillStyle = '#9aa6b2';
-      c.beginPath(); c.moveTo(-1, -6); c.lineTo(-6, -10 - f); c.lineTo(3, -7); c.fill();
+      c.beginPath(); c.moveTo(-2, -6); c.lineTo(-8, -11 - f); c.lineTo(3, -7); c.fill();
+      c.fillStyle = '#7d8a96';
+      c.beginPath(); c.moveTo(0, -5); c.lineTo(4, -10 + f); c.lineTo(5, -6); c.fill();
     } else {
       c.strokeStyle = '#d35400'; c.lineWidth = 1; c.beginPath(); c.moveTo(-0.5, -1.4); c.lineTo(-0.5, 0); c.moveTo(1.5, -1.4); c.lineTo(1.5, 0); c.stroke();
     }
@@ -478,6 +478,62 @@
     c.beginPath(); c.moveTo(hx - 4, hy - 2); c.lineTo(hx - 3, hy - 8); c.lineTo(hx, hy - 4); c.fill();
     c.beginPath(); c.moveTo(hx + 1, hy - 4); c.lineTo(hx + 3.5, hy - 8); c.lineTo(hx + 4.5, hy - 2); c.fill();
     c.fillStyle = '#2ecc71'; circle(c, hx + 2.2, hy - 0.6, 1); c.fill();
+    c.restore();
+  }
+
+  /** Утка на воде: o.t - время, o.ph - фаза покачивания, o.fast - удирает. */
+  function duck(c, o) {
+    const bob = Math.sin(o.t * 2.2 + o.ph) * 0.8;
+    c.save();
+    c.strokeStyle = 'rgba(255,255,255,0.45)'; c.lineWidth = 1;
+    const k = (o.t * (o.fast ? 2.4 : 0.8) + o.ph) % 1;
+    ellipse(c, 0, 0, 7 + k * 8, 2.6 + k * 3); c.globalAlpha = 1 - k; c.stroke(); c.globalAlpha = 1;
+    c.translate(0, bob);
+    c.scale(o.facing, 1);
+    c.fillStyle = o.drake ? '#8d6e63' : '#a1887f'; ellipse(c, 0, -3, 7, 3.6); c.fill();
+    c.fillStyle = o.drake ? '#5d4037' : '#795548'; ellipse(c, -3, -3.6, 3.6, 2, -0.2); c.fill();
+    c.fillStyle = '#efe9e0'; c.fillRect(-7.5, -4, 2, 1.4);
+    c.fillStyle = o.drake ? '#1b7a4b' : '#8d6e63'; circle(c, 5, -7.4, 2.6); c.fill();
+    if (o.drake) { c.fillStyle = '#fff'; c.fillRect(3.6, -5.4, 2.8, 0.8); }
+    c.fillStyle = '#f4b400'; c.beginPath(); c.moveTo(7, -7.6); c.lineTo(10, -7); c.lineTo(7, -6.4); c.fill();
+    c.fillStyle = '#111'; circle(c, 5.8, -8, 0.6); c.fill();
+    c.restore();
+  }
+
+  /** Фонтан на площади: круглая чаша радиуса r, струи бьют вверх. */
+  function fountain(c, r, t, night) {
+    const rx = r, ry = r * 0.5, H = 12;
+    c.save();
+    c.fillStyle = 'rgba(30,20,10,0.2)'; ellipse(c, 4, 3, rx + 4, ry + 3); c.fill();
+    c.fillStyle = '#9e958a';
+    c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI); c.lineTo(-rx, -H); c.ellipse(0, -H, rx, ry, 0, Math.PI, 0, true); c.closePath(); c.fill();
+    c.fillStyle = '#c9c0b4'; ellipse(c, 0, -H, rx, ry); c.fill();
+    c.fillStyle = night ? '#2d5f8a' : '#5aa9d6'; ellipse(c, 0, -H + 1, rx - 6, ry - 3); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.4)'; c.lineWidth = 1;
+    for (let i = 0; i < 3; i++) { const k = (t * 0.5 + i / 3) % 1; c.globalAlpha = 1 - k; ellipse(c, 0, -H + 1, 6 + k * (rx - 14), 3 + k * (ry - 6)); c.stroke(); }
+    c.globalAlpha = 1;
+    c.fillStyle = '#b5ab9f'; c.fillRect(-3, -H - 26, 6, 26);
+    c.fillStyle = '#c9c0b4'; ellipse(c, 0, -H - 26, 11, 4.4); c.fill();
+    c.fillStyle = night ? '#3d78a8' : '#7cc2ea'; ellipse(c, 0, -H - 26.5, 8, 3); c.fill();
+    c.strokeStyle = night ? 'rgba(190,225,255,0.7)' : 'rgba(225,245,255,0.9)'; c.lineWidth = 1.4; c.lineCap = 'round';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + t * 0.3, ex = Math.cos(a) * 15, ey = Math.sin(a) * 6;
+      const top = -H - 44 - Math.sin(t * 7 + i) * 2;
+      c.beginPath(); c.moveTo(0, -H - 28); c.quadraticCurveTo(ex * 0.5, top, ex, -H - 26 + ey + 6); c.stroke();
+    }
+    c.restore();
+  }
+
+  /** Мяч на спортплощадке: футбольный, с тенью и высотой z. */
+  function football(c, z, spin) {
+    c.save();
+    c.fillStyle = 'rgba(30,20,10,0.22)'; ellipse(c, 0, 0, 6, 2.2); c.fill();
+    c.translate(0, -5 - (z || 0));
+    c.fillStyle = '#fafafa'; circle(c, 0, 0, 5.2); c.fill();
+    c.strokeStyle = '#999'; c.lineWidth = 0.6; c.stroke();
+    c.fillStyle = '#222';
+    for (let i = 0; i < 3; i++) { const a = spin + i * 2.1; circle(c, Math.cos(a) * 2.6, Math.sin(a) * 2.6, 1.3); c.fill(); }
+    circle(c, 0, 0, 1.2); c.fill();
     c.restore();
   }
 
@@ -539,18 +595,33 @@
     for (const k of [-0.5, 0, 0.5]) { c.beginPath(); c.ellipse(k * r, -r * 0.8, r * 0.35, r * 0.82, 0, 0, Math.PI * 2); c.stroke(); }
     c.fillStyle = '#5d6d2b'; c.fillRect(-1.2, -r * 1.9, 2.4, r * 0.5);
   }
-  function leafPile(c, size, seed) {
+  function leafPile(c, size, seed, t) {
     if (size < 0.05) return;
     const rnd = mulberry32(seed);
-    const R = 22 * (0.5 + size * 0.5), H = 14 * size;
+    const R = 36 * (0.55 + size * 0.45), H = 30 * size;
     c.save();
-    shadow(c, R * 1.05, R * 0.38, 0.15);
-    for (let i = 0; i < 55; i++) {
+    // Тень и тёмный край, чтобы куча читалась на газоне с листьями
+    c.fillStyle = 'rgba(40,20,5,0.32)'; ellipse(c, 3, 2, R * 1.12, R * 0.44); c.fill();
+    const g = c.createLinearGradient(0, -H - 4, 0, R * 0.3);
+    g.addColorStop(0, '#f6a531'); g.addColorStop(0.55, '#d8641c'); g.addColorStop(1, '#8f3a12');
+    c.fillStyle = g;
+    c.beginPath();
+    c.ellipse(0, 0, R, R * 0.4, 0, 0, Math.PI);
+    c.bezierCurveTo(-R * 0.95, -H * 0.55, -R * 0.45, -H * 1.05, 0, -H);
+    c.bezierCurveTo(R * 0.45, -H * 1.05, R * 0.95, -H * 0.55, R, 0);
+    c.fill();
+    c.strokeStyle = 'rgba(90,35,10,0.7)'; c.lineWidth = 1.4; c.stroke();
+    for (let i = 0; i < 120; i++) {
       const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
-      const x = Math.cos(a) * d * R, y = Math.sin(a) * d * R * 0.4;
+      const x = Math.cos(a) * d * R * 0.95, y = Math.sin(a) * d * R * 0.38;
       const z = (1 - d * d) * H;
-      leafShape(c, x, y - z, 3.4, rnd() * 6, LEAF_COLORS[Math.floor(rnd() * LEAF_COLORS.length)]);
+      leafShape(c, x, y - z, 3.6 + rnd() * 1.6, rnd() * 6, LEAF_COLORS[Math.floor(rnd() * LEAF_COLORS.length)]);
     }
+    // Солнечный блик и пара листиков, что шевелятся сверху
+    c.fillStyle = 'rgba(255,236,170,0.35)'; ellipse(c, -R * 0.25, -H * 0.75, R * 0.35, H * 0.18 + 1, -0.3); c.fill();
+    const wob = Math.sin((t || 0) * 2.4 + seed) * 1.5;
+    leafShape(c, -4 + wob, -H - 3, 4.4, 0.6 + wob * 0.2, '#f1c40f');
+    leafShape(c, 6 - wob, -H - 1, 4, 2.2 - wob * 0.2, '#c0392b');
     c.restore();
   }
 
@@ -665,7 +736,7 @@
   }
 
   /* ======================= Дом после прогулки ======================= */
-  /** Комната с последствиями прогулки. outcomes: { pee, poop, energy, happy, dirty } - true, если сделано. */
+  /** Комната с последствиями прогулки. res.done: { pee, poop, energy, happy } - true, если сделано. */
   function homeScene(c, w, h, res, t) {
     const done = res.done;
     // Стена и пол
@@ -717,12 +788,8 @@
       c.fillStyle = '#ecf0f1'; for (let i = 0; i < 5; i++) { circle(c, w * 0.3 + 30 + i * 5, h * 0.9 + (i % 2) * 4, 2); c.fill(); }
       c.fillStyle = '#9b59b6'; rr(c, w * 0.36, h * 0.95, 22, 8, 4); c.fill();
     }
-    if (res.dirty) {
-      c.fillStyle = 'rgba(93,58,26,0.6)';
-      for (let i = 0; i < 7; i++) { const px = w * 0.05 + i * w * 0.1, py = h * 0.95 - (i % 2) * 8; circle(c, px, py, 2.6); c.fill(); circle(c, px - 3, py - 4, 1.2); c.fill(); circle(c, px + 3, py - 4, 1.2); c.fill(); }
-    }
   }
 
   root.WalkArt = { LOUIS, PEOPLE, DOGS, TREES, LEAF_COLORS, BUSH_COLORS, mulberry32, circle, ellipse, rr, leafShape,
-    louis, dog, person, pigeon, cat, tree, bush, lamp, pumpkin, leafPile, item, poopPile, thought, isoBox, homeScene };
+    louis, dog, person, pigeon, cat, duck, fountain, football, tree, bush, lamp, pumpkin, leafPile, item, poopPile, thought, isoBox, homeScene };
 })(typeof self !== 'undefined' ? self : this);
