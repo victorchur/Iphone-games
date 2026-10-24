@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#3f7d4e">
+  <meta name="description" content="Луи на прогулке - пёс Луи гуляет во дворе, ищет вкусняшки и игрушки, дружит с маленькими собачками и убегает от больших">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Луи">
+  <meta name="format-detection" content="telephone=no">
+  <title>Луи на прогулке</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Двор, где гуляет Луи"></canvas>
+
+  <!-- HUD во время прогулки -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <button id="btn-pause" class="icon-btn" type="button" aria-label="Пауза">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+      </button>
+      <div class="mood" aria-label="Настроение Луи">
+        <span id="mood-face" class="mood-face">🙂</span>
+        <div class="bar"><div id="mood-fill" class="bar-fill"></div></div>
+      </div>
+      <div class="hud-right">
+        <div id="timer" class="timer">2:00</div>
+        <div id="score" class="score">0</div>
+      </div>
+      <button id="btn-mute" class="icon-btn" type="button" aria-label="Выключить звук" aria-pressed="false">
+        <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path d="m16 9 5 5"/><path d="m21 9-5 5"/></svg>
+      </button>
+    </div>
+    <div class="stamina" aria-label="Силы на бег"><div id="stamina-fill" class="stamina-fill"></div></div>
+  </div>
+
+  <button id="btn-sniff" class="sniff hidden" type="button" aria-label="Нюх: найти спрятанные вещи">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <ellipse cx="24" cy="27" rx="15" ry="11" fill="#2b1d16"/>
+      <ellipse cx="18" cy="28" rx="3.6" ry="4.6" fill="#0d0806"/>
+      <ellipse cx="30" cy="28" rx="3.6" ry="4.6" fill="#0d0806"/>
+      <ellipse cx="20" cy="21" rx="5" ry="2.6" fill="#6b5446"/>
+      <path d="M10 12c3-4 7-4 9 0M38 12c-3-4-7-4-9 0" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
+    </svg>
+    <span>Нюх</span>
+  </button>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Главное меню: выбор прогулки -->
+  <section id="screen-menu" class="screen">
+    <div class="panel menu">
+      <a class="back-link" href="../">&lsaquo; Все игры</a>
+      <img class="menu-logo" src="icons/icon-192.png" alt="" width="96" height="96">
+      <h1>Луи на прогулке</h1>
+      <p class="lead">Луи гуляет во дворе сам. Ищи вкусняшки и игрушки, знакомься с маленькими собачками. Большие собаки пугают Луи: убегай к подъезду.</p>
+      <div id="levels" class="levels"></div>
+      <h2>Друзья Луи</h2>
+      <div id="album" class="album"></div>
+      <p id="totals" class="totals"></p>
+      <details class="howto">
+        <summary>Как играть</summary>
+        <ul>
+          <li>Веди пальцем по экрану - Луи идёт. Тяни дальше - бежит, пока есть силы.</li>
+          <li>Кнопка «Нюх» показывает следы запаха и спрятанные в траве и кустах вещи.</li>
+          <li>Постой рядом с маленькой собачкой - они понюхаются, настроение растёт.</li>
+          <li>Большая собака лает и гонится. Беги к двери подъезда, туда она не заходит.</li>
+          <li>Когда время выйдет, приведи Луи к подъезду и получи бонус.</li>
+          <li>Если настроение упадёт до нуля, Луи загрустит и прогулка закончится.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- Пауза -->
+  <section id="screen-pause" class="screen hidden">
+    <div class="panel small">
+      <h2>Пауза</h2>
+      <button id="btn-resume" class="btn primary" type="button">Продолжить</button>
+      <button id="btn-quit" class="btn" type="button">Закончить прогулку</button>
+    </div>
+  </section>
+
+  <!-- Итоги -->
+  <section id="screen-result" class="screen hidden">
+    <div class="panel result">
+      <h2 id="result-title">Луи дома!</h2>
+      <div id="result-stars" class="stars-big"></div>
+      <div id="result-score" class="result-score">0</div>
+      <div id="result-best" class="best-badge hidden">Новый рекорд!</div>
+      <ul id="result-rows" class="rows"></ul>
+      <button id="btn-again" class="btn primary" type="button">Ещё раз</button>
+      <button id="btn-next" class="btn" type="button">Следующая прогулка</button>
+      <button id="btn-menu" class="btn ghost" type="button">К прогулкам</button>
+    </div>
+  </section>
+
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
